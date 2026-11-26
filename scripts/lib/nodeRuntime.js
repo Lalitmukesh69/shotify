@@ -78,7 +78,9 @@ const prependToPath = (env, dir) => {
 };
 
 const ensureCargoBinInPath = (env) => {
-  const cargoBin = path.join(process.env.USERPROFILE || '', '.cargo', 'bin');
+  const os = require('os');
+  const homeDir = env.HOME || env.USERPROFILE || os.homedir();
+  const cargoBin = homeDir ? path.join(homeDir, '.cargo', 'bin') : '';
   const pathKey = pathKeyForEnv(env);
   const currentPath = String(env[pathKey] || '');
   if (cargoBin && !currentPath.toLowerCase().includes(cargoBin.toLowerCase())) {

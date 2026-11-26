@@ -321,13 +321,15 @@ export function applyBackgroundFxToCanvas({
 	ctx.clearRect(0, 0, w, h);
 
 	const shouldAvoidCanvasFilter = (() => {
-		// In WKWebView (notably Tauri on macOS), `ctx.filter = 'blur(...)'` may exist
-		// but render with no visible effect. Prefer the gaussian blur path there.
+		// In WKWebView on macOS, `ctx.filter = 'blur(...)'` may exist
+		// but render with no visible effect. Prefer the gaussian blur path there,
+		// while keeping fast `ctx.filter` interactive blur on WebKitGTK Linux and WebView2.
 		if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
 		const ua = String(navigator.userAgent || '');
+		const platform = String(navigator.platform || '');
+		const isMac = !!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(platform || ua));
 		const isWebKit = /AppleWebKit\//.test(ua) && !/Chrome\//.test(ua);
-		const isTauriShell = !!window.tauriAPI || !!window.__TAURI__;
-		return isTauriShell || isWebKit;
+		return isMac && isWebKit;
 	})();
 
 	if (!blur || blur < 0.0001) {

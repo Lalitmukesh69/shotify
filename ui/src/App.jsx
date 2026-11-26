@@ -24,6 +24,7 @@ import PresetSelectorTopRight from './PresetSelectorTopRight'
 import PresetSaveDialog from './PresetSaveDialog'
 import VibrancyDebugPanel from './VibrancyDebugPanel'
 import CenterPreview from './CenterPreview'
+import WindowControls, { LinuxTitleBar, LinuxResizeHandles } from './WindowControls'
 
 import { useGradients } from './hooks/useGradients'
 import { useSystemWallpapers } from './hooks/useSystemWallpapers'
@@ -45,7 +46,12 @@ const App = () => {
   const [isTauri, setIsTauri] = useState(false)
   const [isWindows, setIsWindows] = useState(false)
   const [isMac, setIsMac] = useState(false)
+  const [isLinux, setIsLinux] = useState(false)
   const [appWindow, setAppWindow] = useState(null)
+  const [windowDecorated, setWindowDecorated] = useState(() => {
+    const isLin = typeof window !== 'undefined' && !!(window?.platform?.isLinux ?? /Linux/i.test(navigator?.platform || ''))
+    return !isLin && !window?.__SHOTSTYLE_BOOT_PAYLOAD?.spawnedWindow
+  })
   const launchHideAppliedRef = useRef(false)
   const rootFocusRef = useRef(null)
 
@@ -61,17 +67,20 @@ const App = () => {
   useEffect(() => {
     try {
       setIsTauri(!!(window?.__TAURI_INTERNALS__ || window?.__TAURI__ || window?.tauriAPI))
-      setIsWindows(!!(window?.platform?.isWindows ?? /Win/i.test(navigator.platform || '')))
-      setIsMac(!!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(navigator.platform || '')))
+      const win = !!(window?.platform?.isWindows ?? /Win/i.test(navigator.platform || ''))
+      const mac = !!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(navigator.platform || ''))
+      const lin = !!(window?.platform?.isLinux ?? /Linux/i.test(navigator.platform || ''))
+      setIsWindows(win)
+      setIsMac(mac)
+      setIsLinux(lin)
       const root = document?.documentElement
       if (root) {
-        const mac = !!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(navigator.platform || ''))
         root.classList.toggle('platform-mac', mac)
-        root.classList.toggle('platform-windows', !!(window?.platform?.isWindows ?? /Win/i.test(navigator.platform || '')))
-        root.classList.toggle('platform-linux', !!(window?.platform?.isLinux ?? /Linux/i.test(navigator.platform || '')))
+        root.classList.toggle('platform-windows', win)
+        root.classList.toggle('platform-linux', lin)
       }
     } catch (_) {
-      setIsTauri(false); setIsWindows(false); setIsMac(false)
+      setIsTauri(false); setIsWindows(false); setIsMac(false); setIsLinux(false)
     }
   }, [])
 
@@ -82,7 +91,17 @@ const App = () => {
       try {
         const mod = await import('@tauri-apps/api/window')
         const current = mod?.getCurrentWindow?.()
-        if (!cancelled && current) setAppWindow(current)
+        if (!current) return
+        let decorated = !window?.__SHOTSTYLE_BOOT_PAYLOAD?.spawnedWindow
+        try {
+          if (typeof current.isDecorated === 'function') {
+            decorated = !!(await current.isDecorated())
+          }
+        } catch (_) {}
+        if (!cancelled) {
+          setAppWindow(current)
+          setWindowDecorated(decorated)
+        }
       } catch (_) { if (!cancelled) setAppWindow(null) }
     })()
     return () => { cancelled = true }
@@ -119,11 +138,14 @@ const App = () => {
     } catch (_) { return { ...DEFAULT_GENERAL_SETTINGS } }
   })
   const [autoHideEnabled, setAutoHideEnabled] = useState(() => {
+    const fallbackAutoHide = typeof window === 'undefined'
+      ? true
+      : !(window?.platform?.isLinux ?? /Linux/i.test(navigator?.platform || ''))
     try {
       const g = getJson('settings.general', null)
       if (g && typeof g === 'object' && typeof g.hideAppWhenUnfocused === 'boolean') return !!g.hideAppWhenUnfocused
-      return !!getJson('settings.autoHideEnabled', true)
-    } catch (_) { return true }
+      return !!getJson('settings.autoHideEnabled', fallbackAutoHide)
+    } catch (_) { return fallbackAutoHide }
   })
   const autoHideSuspendedForFileDialogRef = useRef(false)
 
@@ -311,7 +333,7 @@ const App = () => {
 
   // Watermark
   const [watermarkEnabled, setWatermarkEnabled] = useState(false)
-  const [watermarkText, setWatermarkText] = useState('Made with shot.style')
+  const [watermarkText, setWatermarkText] = useState('Made with shotify')
   const [watermarkPosition, setWatermarkPosition] = useState('inside')
   const [watermarkPrefix, setWatermarkPrefix] = useState('none')
   const [watermarkOffsetX, setWatermarkOffsetX] = useState(0)
@@ -440,14 +462,14 @@ const App = () => {
 
   const {
     exportFolderPath, exportBusy, exportDrawerOpen, setExportDrawerOpen, exportDrawerRef,
-    pickExportFolder, saveToFolder, copyOutput, saveOutput, applyCapturedSource, takeScreenshot,
+    pickExportFolder, saveToFolder, copyOutput, saveOutput, pasteOutput, applyCapturedSource, takeScreenshot,
   } = useExportFunctions({
     blob, imageOptions, exportScale, exportFormat, exportQuality, exportRef,
     appWindow, generalSettings, pushToast, setBlob, setTransform, setAnnotationTool, rootFocusRef,
   })
 
   const { shortcuts, setShortcuts, shortcutRecordingKey, setShortcutRecordingKey, formatShortcutLabel } =
-    useShortcuts({ copyOutput, saveOutput, saveToFolder, pushToast })
+    useShortcuts({ copyOutput, saveOutput, saveToFolder, pasteOutput, pushToast })
 
   useScreenshotCapture({ shortcuts, setIsTauri, setBlob, setTransform, setAnnotationTool, rootFocusRef, pushToast })
 
@@ -566,11 +588,13 @@ const App = () => {
   const annotationWidthPx = Math.max(0, Math.round(Number(annotationBarRef?.current?.offsetWidth) || 0))
   const annotationRightPx = annotationLeftPx + annotationWidthPx
   const dragMidWidthPx = Math.max(0, annotationLeftPx - sidebarRightPx)
-  const useCssBackdropBlur = isTauri && !isWindows && !vibrancyForceOpaque && !vibrancyActive
+  const useCssBackdropBlur = isTauri && !isWindows && !isLinux && !vibrancyForceOpaque && !vibrancyActive
+  const showSlimLinuxTitleBar = isTauri && !!appWindow && isLinux && !windowDecorated
+  const showCustomWindowControls = isTauri && !!appWindow && isWindows
 
   // Context value
   const contextValue = {
-    isTauri, isMac, isWindows, appWindow,
+    isTauri, isMac, isWindows, isLinux, showCustomWindowControls, showSlimLinuxTitleBar, appWindow,
     sidebarScrollRef, sidebarIsScrolling, uploadWallpaperInputRef, onCustomWallpaperPicked,
     blob, backgroundSelection, setBackgroundSelection, defaultBackgroundSelection,
     wallpaperType, wallpaperTabs, pressedWallpaperTab, setPressedWallpaperTab,
@@ -627,7 +651,18 @@ const App = () => {
           <div
             ref={rootFocusRef}
             tabIndex={-1}
-            className="relative min-h-screen overflow-hidden shotstyle-app-root"
+            className="relative flex flex-col h-screen w-screen overflow-hidden shotstyle-app-root"
+            onDragOver={(e) => {
+              if (e.dataTransfer?.types?.includes('Files')) {
+                e.preventDefault()
+              }
+            }}
+            onDrop={(e) => {
+              if (e.dataTransfer?.files?.length) {
+                e.preventDefault()
+                void pasteOutput(e)
+              }
+            }}
             style={{
               outline: 'none',
               width: '100%',
@@ -635,7 +670,7 @@ const App = () => {
               backgroundColor: isTauri
                 ? vibrancyForceOpaque
                     ? 'rgba(18,18,24,0.84)'
-                    : isWindows ? 'rgba(14,14,18,0.97)' : 'transparent'
+                    : (isWindows || isLinux) ? 'rgba(14,14,18,0.97)' : 'transparent'
                 : 'rgba(0,0,0,0.58)',
               backdropFilter: useCssBackdropBlur
                 ? 'blur(var(--shotstyle-vibrancy-blur, 30px)) saturate(var(--shotstyle-vibrancy-saturate, 1.45))'
@@ -647,51 +682,59 @@ const App = () => {
               overflow: 'hidden',
             }}
           >
+            <LinuxTitleBar />
+
+            <div className="relative flex-1 min-h-0 w-full overflow-hidden">
+              {isTauri && !settingsOpen && (
+                <>
+                  <div
+                    data-tauri-drag-region
+                    className="window-drag-region absolute top-0"
+                    style={{
+                      left: 0,
+                      width: sidebarLeftPx,
+                      height: dragRegionHeightPx,
+                      background: 'transparent',
+                    }}
+                  />
+                  <div
+                    data-tauri-drag-region
+                    className="window-drag-region absolute top-0"
+                    style={{
+                      left: sidebarRightPx,
+                      width: dragMidWidthPx,
+                      height: dragRegionHeightPx,
+                      background: 'transparent',
+                    }}
+                  />
+                  <div
+                    data-tauri-drag-region
+                    className="window-drag-region absolute top-0 right-0"
+                    style={{
+                      left: annotationRightPx,
+                      height: dragRegionHeightPx,
+                      background: 'transparent',
+                    }}
+                  />
+                </>
+              )}
+
+              <WindowControls />
+
+              <PresetSelectorTopRight />
+
+              <CenterPreview />
+
+              <Sidebar />
+
+              <AnnotationBar />
+
+              <ExportFooter />
+            </div>
+
             <VibrancyDebugPanel />
 
-            {isTauri && !settingsOpen && (
-              <>
-                <div
-                  data-tauri-drag-region
-                  className="window-drag-region absolute top-0"
-                  style={{
-                    left: 0,
-                    width: sidebarLeftPx,
-                    height: dragRegionHeightPx,
-                    background: 'transparent',
-                  }}
-                />
-                <div
-                  data-tauri-drag-region
-                  className="window-drag-region absolute top-0"
-                  style={{
-                    left: sidebarRightPx,
-                    width: dragMidWidthPx,
-                    height: dragRegionHeightPx,
-                    background: 'transparent',
-                  }}
-                />
-                <div
-                  data-tauri-drag-region
-                  className="window-drag-region absolute top-0 right-0"
-                  style={{
-                    left: annotationRightPx,
-                    height: dragRegionHeightPx,
-                    background: 'transparent',
-                  }}
-                />
-              </>
-            )}
-
-            <PresetSelectorTopRight />
-
-            <CenterPreview />
-
-            <Sidebar />
-
-            <AnnotationBar />
-
-            <ExportFooter />
+            <LinuxResizeHandles />
 
             <input
               ref={uploadWallpaperInputRef}

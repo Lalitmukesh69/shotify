@@ -6056,7 +6056,7 @@
       "description": "Platform target.",
       "oneOf": [
         {
-          "description": "macOS.",
+          "description": "MacOS.",
           "type": "string",
           "enum": [
             "macOS"

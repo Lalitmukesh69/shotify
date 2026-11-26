@@ -1,7 +1,7 @@
 import { isValidCombo, normalizeCombo } from './keybinds';
 
-const isWindows = typeof navigator !== 'undefined' && /Win/.test(navigator.platform);
-const primaryMod = isWindows ? 'Ctrl' : 'Meta';
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const primaryMod = isMac ? 'Meta' : 'Ctrl';
 
 export const defaultShortcuts = {
   copy: `${primaryMod}+C`,

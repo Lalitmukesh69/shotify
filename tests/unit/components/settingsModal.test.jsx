@@ -137,4 +137,45 @@ describe('SettingsModal', () => {
     });
     expect(setJsonMock).not.toHaveBeenCalled();
   });
+
+  it('hides macOS-only dock toggle and displays Wayland CLI hint on cli-only Linux sessions', async () => {
+    window.tauriAPI = {
+      getPlatformCapabilities: vi.fn(async () => ({
+        os: 'linux',
+        displayServer: 'wayland',
+        compositor: 'niri',
+        globalShortcutsMode: 'cli-only',
+        supportsOpenAtLogin: true,
+        supportsDockHide: false,
+        hasTrayHost: true,
+      })),
+    };
+
+    renderModal();
+
+    await waitFor(() => {
+      expect(screen.getByText(/shotify --capture-copy/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('checkbox', { name: 'Hide dock icon when app hidden' })).not.toBeInTheDocument();
+  });
+
+  it('shows macOS dock option when platform supports dock hiding', async () => {
+    window.tauriAPI = {
+      getPlatformCapabilities: vi.fn(async () => ({
+        os: 'macos',
+        displayServer: null,
+        compositor: null,
+        globalShortcutsMode: 'native',
+        supportsOpenAtLogin: true,
+        supportsDockHide: true,
+        hasTrayHost: true,
+      })),
+    };
+
+    renderModal();
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: 'Hide dock icon when app hidden' })).toBeInTheDocument();
+    });
+  });
 });

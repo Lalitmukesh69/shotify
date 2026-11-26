@@ -4,7 +4,42 @@ import { trimMacOsWindowScreenshotDataUrl } from '../../../utils/export/imagePro
 import { copyImage as copyImageUtil, createExportableSnapshot, saveImageAdvanced, scaleAndEncodeBlob } from '../../../utils/export/imageProcessor'
 import { readFileAsDataUrlWithRetry } from '../../../utils/export/readFileAsDataUrlWithRetry'
 import { getJson, setJson } from '../../../utils/platform/safeStorage'
-import { formatExportErrorMessage, getDesktopApi } from '../AppHelpers'
+import { formatExportErrorMessage, getDesktopApi, getNativeInvoke } from '../AppHelpers'
+
+const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onerror = () => reject(new Error('Failed to read image file'))
+  reader.onload = () => resolve(String(reader.result || ''))
+  reader.readAsDataURL(file)
+})
+
+const isImageFileLike = (file) => {
+  if (!file) return false
+  if (String(file.type || '').toLowerCase().startsWith('image/')) return true
+  return /\.(png|jpe?g|webp|bmp|gif|svg|avif|heic|heif)$/i.test(String(file.name || ''))
+}
+
+const readClipboardEventImageFile = (clipboardEvent) => {
+  const dt = clipboardEvent?.clipboardData || clipboardEvent?.originalEvent?.clipboardData || clipboardEvent?.dataTransfer
+  if (!dt) return null
+  const items = dt.items
+  if (items && typeof items.length === 'number') {
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i]
+      if (item?.kind === 'file' || String(item?.type || '').toLowerCase().startsWith('image/')) {
+        const file = typeof item.getAsFile === 'function' ? item.getAsFile() : item
+        if (isImageFileLike(file)) return file
+      }
+    }
+  }
+  const files = dt.files
+  if (files && typeof files.length === 'number') {
+    for (let i = 0; i < files.length; i += 1) {
+      if (isImageFileLike(files[i])) return files[i]
+    }
+  }
+  return null
+}
 
 /**
  * Provides export functions and related state.
@@ -213,7 +248,8 @@ export function useExportFunctions({
 
   const applyCapturedSource = useCallback(async (src, { shouldFocus = true } = {}) => {
     if (!src || typeof src !== 'string') return
-    const cleaned = src.startsWith('data:image/')
+    const isMac = typeof window !== 'undefined' && !!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(navigator?.platform || ''))
+    const cleaned = (isMac && src.startsWith('data:image/'))
       ? await trimMacOsWindowScreenshotDataUrl(src)
       : src
 
@@ -235,6 +271,58 @@ export function useExportFunctions({
       try { rootFocusRef.current?.focus?.({ preventScroll: true }) } catch {}
     }
   }, [rootFocusRef, setAnnotationTool, setBlob, setTransform])
+
+  const pasteOutput = useCallback(async (clipboardEvent = null) => {
+    try {
+      const eventFile = readClipboardEventImageFile(clipboardEvent)
+      if (eventFile) {
+        const dataUrl = await fileToDataUrl(eventFile)
+        if (dataUrl.startsWith('data:image/')) {
+          await applyCapturedSource(dataUrl, { shouldFocus: true })
+          pushToast('Pasted image from clipboard', { variant: 'success' })
+          return true
+        }
+      }
+
+      await installTauriApi().catch(() => {})
+      const api = window?.tauriAPI
+      const nativeInvoke = getNativeInvoke()
+      let nativeDataUrl = null
+      if (typeof api?.readClipboardImage === 'function') {
+        nativeDataUrl = await api.readClipboardImage()
+      } else if (nativeInvoke) {
+        nativeDataUrl = await nativeInvoke('clipboard_read_image_data_url')
+      }
+
+      if (typeof nativeDataUrl === 'string' && nativeDataUrl.startsWith('data:image/')) {
+        await applyCapturedSource(nativeDataUrl, { shouldFocus: true })
+        pushToast('Pasted image from clipboard', { variant: 'success' })
+        return true
+      }
+
+      if (typeof navigator !== 'undefined' && typeof navigator.clipboard?.read === 'function') {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          const imgType = (item?.types || []).find((t) => String(t).toLowerCase().startsWith('image/'))
+          if (imgType) {
+            const blobItem = await item.getType(imgType)
+            const dataUrl = await fileToDataUrl(blobItem)
+            if (dataUrl.startsWith('data:image/')) {
+              await applyCapturedSource(dataUrl, { shouldFocus: true })
+              pushToast('Pasted image from clipboard', { variant: 'success' })
+              return true
+            }
+          }
+        }
+      }
+
+      pushToast('No image found in clipboard', { variant: 'error', durationMs: 2600 })
+      return false
+    } catch (e) {
+      pushToast(`Paste failed: ${e?.message || String(e)}`, { variant: 'error', durationMs: 3600 })
+      return false
+    }
+  }, [applyCapturedSource, pushToast])
 
   const takeScreenshot = useCallback(async () => {
     try {
@@ -279,6 +367,7 @@ export function useExportFunctions({
     saveToFolder,
     copyOutput,
     saveOutput,
+    pasteOutput,
     applyCapturedSource,
     takeScreenshot,
   }

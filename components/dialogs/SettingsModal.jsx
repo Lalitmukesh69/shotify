@@ -6,8 +6,24 @@ import { defaultShortcuts } from '../../utils/platform/preferences';
 import { analyzeShortcuts, normalizeShortcuts } from '../../utils/platform/shortcuts';
 import { comboFromKeyboardEvent, formatComboForDisplay, isValidCombo, normalizeCombo } from '../../utils/platform/keybinds';
 
-const DEFAULT_SETTINGS = Object.freeze({
-  hideAppWhenUnfocused: true,
+const isLinuxPlatform = () => {
+  try {
+    return typeof window !== 'undefined' && !!(window?.platform?.isLinux ?? /Linux/i.test(navigator?.platform || ''));
+  } catch {
+    return false;
+  }
+};
+
+const isMacPlatform = () => {
+  try {
+    return typeof window !== 'undefined' && !!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(navigator?.platform || ''));
+  } catch {
+    return false;
+  }
+};
+
+const getDefaultSettings = () => ({
+  hideAppWhenUnfocused: !isLinuxPlatform(),
   keepAppInTray: true,
   hideWindowOnLaunch: false,
   openAtLogin: false,
@@ -41,10 +57,11 @@ const SHORTCUT_ROWS = [
 ];
 
 const loadGeneralSettings = () => {
+  const defaults = getDefaultSettings();
   try {
-    return { ...DEFAULT_SETTINGS, ...getJson('settings.general', {}) };
+    return { ...defaults, ...getJson('settings.general', {}) };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return defaults;
   }
 };
 
@@ -87,11 +104,45 @@ export default function SettingsModal({
   const [shortcutDraft, setShortcutDraft] = useState(loadShortcutSettings);
   const [recordingKey, setRecordingKey] = useState(null);
   const [shortcutError, setShortcutError] = useState('');
+  const [platformCaps, setPlatformCaps] = useState(null);
   const [animateIn, setAnimateIn] = useState(false);
   const [mounted, setMounted] = useState(isOpen);
 
   const initialSettingsRef = useRef(loadGeneralSettings());
   const initialShortcutsRef = useRef(loadShortcutSettings());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    (async () => {
+      try {
+        const api = (typeof window !== 'undefined') ? (window.tauriAPI || window.electronAPI) : null;
+        if (typeof api?.getPlatformCapabilities === 'function') {
+          const caps = await api.getPlatformCapabilities();
+          if (active && caps && typeof caps === 'object') {
+            setPlatformCaps(caps);
+          }
+        }
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [isOpen]);
+
+  const supportsDockHide = platformCaps
+    ? !!platformCaps.supportsDockHide
+    : isMacPlatform();
+  const visibleGeneralOptions = useMemo(
+    () => GENERAL_OPTIONS.filter((opt) => opt.key !== 'hideDockIconWhenHidden' || supportsDockHide),
+    [supportsDockHide]
+  );
+  const isWaylandCliOnlyShortcuts = (
+    platformCaps?.os === 'linux' &&
+    platformCaps?.globalShortcutsMode === 'cli-only'
+  );
+  const isWaylandPortalShortcuts = (
+    platformCaps?.os === 'linux' &&
+    platformCaps?.globalShortcutsMode === 'portal'
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -248,7 +299,7 @@ export default function SettingsModal({
       if (typeof api?.setOpenAtLoginEnabled === 'function') {
         api.setOpenAtLoginEnabled(!!settings.openAtLogin);
       }
-      if (typeof api?.setHideDockIconWhenHiddenEnabled === 'function') {
+      if (supportsDockHide && typeof api?.setHideDockIconWhenHiddenEnabled === 'function') {
         api.setHideDockIconWhenHiddenEnabled(!!settings.hideDockIconWhenHidden);
       }
     } catch {}
@@ -338,7 +389,7 @@ export default function SettingsModal({
             {/* Left column — General */}
             <Section title="General">
               <div className="space-y-1">
-                {GENERAL_OPTIONS.map((option) => (
+                {visibleGeneralOptions.map((option) => (
                   <label key={option.key} className="flex cursor-pointer items-center justify-between gap-3 rounded-[8px] px-3 py-2 text-[13px] hover:bg-white/5 transition-colors">
                     <span className="text-white/90">{option.label}</span>
                     <input
@@ -426,6 +477,16 @@ export default function SettingsModal({
                 {(shortcutError || analysis.hasIssues) && (
                   <div className="rounded-[8px] border border-amber-400/30 bg-amber-500/10 px-2.5 py-2 text-[11px] text-amber-200">
                     {shortcutError || 'Resolve shortcut conflicts before saving.'}
+                  </div>
+                )}
+                {isWaylandCliOnlyShortcuts && (
+                  <div className="rounded-[8px] border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] leading-relaxed text-white/75">
+                    Global hotkeys are managed by your Wayland compositor{platformCaps?.compositor ? ` (${platformCaps.compositor})` : ''}. Bind compositor keys to <code className="text-white">shotify --capture</code> and <code className="text-white">shotify --capture-copy</code>.
+                  </div>
+                )}
+                {isWaylandPortalShortcuts && (
+                  <div className="rounded-[8px] border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] leading-relaxed text-white/75">
+                    Global shortcuts are registered via the Desktop GlobalShortcuts portal (or use <code className="text-white">shotify --capture</code>).
                   </div>
                 )}
               </div>

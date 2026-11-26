@@ -5,12 +5,13 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // This repo contains JSX in some `.js` files under the shared app (e.g. components/ThemeContext.js).
+  // This repo contains JSX in some `.js` files under the shared app (e.g. components/overlays/RegionCaptureOverlay.js).
   // Tell Vite/esbuild to treat `.js` as JSX so import analysis + builds succeed.
   esbuild: {
     loader: 'jsx',
     jsx: 'automatic',
     include: /\.[jt]sx?$/,
+    exclude: [],
   },
   optimizeDeps: {
     esbuildOptions: {
@@ -35,6 +36,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         settings: path.resolve(__dirname, 'settings.html'),
+        capture: path.resolve(__dirname, 'capture.html'),
       },
     },
   },

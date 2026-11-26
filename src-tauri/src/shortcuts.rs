@@ -43,6 +43,115 @@ impl Default for GlobalShortcutState {
   }
 }
 
+#[derive(Debug, Clone)]
+pub struct ShortcutBackendInfo {
+  pub mode: String,
+  pub portal_session_active: bool,
+}
+
+pub struct ShortcutBackendState(pub Mutex<ShortcutBackendInfo>);
+
+impl Default for ShortcutBackendState {
+  fn default() -> Self {
+    let mode = if platform::supports_native_global_shortcuts() {
+      "native".to_string()
+    } else {
+      "cli-only".to_string()
+    };
+    Self(Mutex::new(ShortcutBackendInfo {
+      mode,
+      portal_session_active: false,
+    }))
+  }
+}
+
+pub fn get_shortcut_backend_info(app: &tauri::AppHandle) -> (String, bool) {
+  if let Some(state) = app.try_state::<ShortcutBackendState>() {
+    if let Ok(guard) = state.0.lock() {
+      return (guard.mode.clone(), guard.portal_session_active);
+    }
+  }
+  let mode = if platform::supports_native_global_shortcuts() {
+    "native".to_string()
+  } else {
+    "cli-only".to_string()
+  };
+  (mode, false)
+}
+
+#[cfg(target_os = "linux")]
+async fn start_wayland_portal_shortcuts(app: tauri::AppHandle) {
+  use ashpd::desktop::global_shortcuts::{BindShortcutsOptions, GlobalShortcuts, NewShortcut};
+  use ashpd::desktop::CreateSessionOptions;
+  use futures_util::StreamExt;
+
+  let gs = match GlobalShortcuts::new().await {
+    Ok(proxy) => proxy,
+    Err(err) => {
+      log::info!("[shortcuts] Wayland GlobalShortcuts portal unavailable ({err}); using CLI trigger mode");
+      return;
+    }
+  };
+
+  let session = match gs.create_session(CreateSessionOptions::default()).await {
+    Ok(session) => session,
+    Err(err) => {
+      log::info!("[shortcuts] Wayland GlobalShortcuts session unavailable ({err}); using CLI trigger mode");
+      return;
+    }
+  };
+
+  let shortcuts = [
+    NewShortcut::new("capture_region", "Capture region").preferred_trigger("<Control><Shift>8"),
+    NewShortcut::new("capture_region_copy", "Capture region and copy").preferred_trigger("<Control><Shift>9"),
+  ];
+
+  if let Err(err) = gs
+    .bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default())
+    .await
+  {
+    log::info!("[shortcuts] Wayland portal shortcut bind unavailable ({err}); using CLI trigger mode");
+    return;
+  }
+
+  let mut activated_stream = match gs.receive_activated().await {
+    Ok(stream) => stream,
+    Err(err) => {
+      log::warn!("[shortcuts] Failed to subscribe to Wayland GlobalShortcuts activation stream: {err}");
+      return;
+    }
+  };
+
+  if let Some(state) = app.try_state::<ShortcutBackendState>() {
+    if let Ok(mut guard) = state.0.lock() {
+      guard.mode = "portal".to_string();
+      guard.portal_session_active = true;
+    }
+  }
+  log::info!("[shortcuts] Wayland GlobalShortcuts portal active");
+
+  while let Some(activated) = activated_stream.next().await {
+    let intent = match activated.shortcut_id() {
+      "capture_region" => None,
+      "capture_region_copy" => Some("copyOutput"),
+      _ => continue,
+    };
+    if let Err(err) = open_capture_overlay(&app, intent) {
+      let _ = app.emit(
+        "screenshot-error",
+        ScreenshotErrorPayload {
+          error: err,
+          source: Some("wayland-portal-shortcut".to_string()),
+          kind: None,
+          permission_pane: None,
+        },
+      );
+    }
+  }
+
+  drop(session);
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateShortcutsArgs {
@@ -67,6 +176,7 @@ pub struct UpdateShortcutsResult {
   pub window: ShortcutRegisterStatus,
 }
 
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 fn should_keep_unfocused(intent: Option<&str>) -> bool {
   matches!(intent, Some("copyOutput"))
 }
@@ -218,6 +328,15 @@ pub async fn preferences_update_shortcuts(app: tauri::AppHandle, args: UpdateSho
       instant.as_ref().map(|x| x.0.clone()),
       window.as_ref().map(|x| x.0.clone())
     );
+
+    if !platform::supports_native_global_shortcuts() {
+      return Ok(UpdateShortcutsResult {
+        ok: true,
+        region: ShortcutRegisterStatus { ok: true, error: None },
+        instant: ShortcutRegisterStatus { ok: true, error: None },
+        window: ShortcutRegisterStatus { ok: true, error: None },
+      });
+    }
 
     let global = app.global_shortcut();
 
@@ -382,6 +501,17 @@ pub async fn preferences_update_shortcuts(app: tauri::AppHandle, args: UpdateSho
 
 #[cfg(desktop)]
 pub fn setup_global_shortcuts(handle: &tauri::AppHandle) -> Result<(), tauri::Error> {
+  if !platform::supports_native_global_shortcuts() {
+    #[cfg(target_os = "linux")]
+    {
+      let app = handle.clone();
+      tauri::async_runtime::spawn(async move {
+        start_wayland_portal_shortcuts(app).await;
+      });
+    }
+    return Ok(());
+  }
+
   // Register the global shortcut plugin, and route shortcut presses to the renderer
   // by emitting the same events the UI expects.
   handle.plugin(
@@ -601,6 +731,11 @@ pub fn setup_global_shortcuts(handle: &tauri::AppHandle) -> Result<(), tauri::Er
 
 #[cfg(desktop)]
 pub fn register_default_shortcuts(handle: &tauri::AppHandle) {
+  if !platform::supports_native_global_shortcuts() {
+    eprintln!("[shortcuts] skipping native global shortcut registration on non-X11 session");
+    return;
+  }
+
   // Register default shortcuts on startup so Cmd+Shift+6 works immediately.
   // If registration fails (e.g. another app still owns the shortcut), we'll log it.
   let is_macos = cfg!(target_os = "macos");

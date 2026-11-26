@@ -16,8 +16,11 @@ const readBool = (key, fallback) => {
 }
 
 export default function SettingsWindow() {
+  const defaultAutoHide = typeof window === 'undefined'
+    ? true
+    : !(window?.platform?.isLinux ?? /Linux/i.test(navigator?.platform || ''))
   const [shortcuts, setShortcuts] = useState(() => getJson('settings.shortcuts', defaultShortcuts))
-  const [autoHideEnabled, setAutoHideEnabled] = useState(() => readBool('settings.autoHideEnabled', true))
+  const [autoHideEnabled, setAutoHideEnabled] = useState(() => readBool('settings.autoHideEnabled', defaultAutoHide))
 
   const [options, setOptions] = useState(() => {
     const v = getJson('settings.options', null)
@@ -41,6 +44,19 @@ export default function SettingsWindow() {
     try {
       setShortcuts(next)
       setJson('settings.shortcuts', next)
+    } catch {}
+  }
+
+  const onChangeGeneralSettings = async (nextGeneral) => {
+    try {
+      const api = typeof window !== 'undefined' ? (window.tauriAPI || window.electronAPI) : null
+      if (!api) return
+      await api?.setKeepInTrayEnabled?.(!!nextGeneral?.keepAppInTray)
+      await api?.setOpenAtLoginEnabled?.(!!nextGeneral?.openAtLogin)
+      await api?.setAutoHideEnabled?.(!!nextGeneral?.hideAppWhenUnfocused)
+      if (window?.platform?.isMac) {
+        await api?.setHideDockIconWhenHiddenEnabled?.(!!nextGeneral?.hideDockIconWhenHidden)
+      }
     } catch {}
   }
 
@@ -70,6 +86,7 @@ export default function SettingsWindow() {
           setOptions={setOptions}
           autoHideEnabled={autoHideEnabled}
           onSetAutoHideEnabled={setAutoHideEnabled}
+          onChangeGeneralSettings={onChangeGeneralSettings}
           onSaveShortcuts={onSaveShortcuts}
           onClose={onClose}
         />

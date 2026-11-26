@@ -62,10 +62,27 @@ export const comboFromKeyboardEvent = (e) => {
   return normalizeCombo(parts.join('+'));
 };
 
+const NON_TEXT_INPUT_TYPES = new Set([
+  'range',
+  'checkbox',
+  'radio',
+  'color',
+  'file',
+  'button',
+  'submit',
+  'reset',
+  'image',
+]);
+
 export const isEditableElement = (el) => {
   if (!el) return false;
   const tag = (el.tagName || '').toUpperCase();
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT') {
+    const inputType = String(el.type || 'text').toLowerCase();
+    return !NON_TEXT_INPUT_TYPES.has(inputType);
+  }
+  if (tag === 'SELECT') return true;
   if (el.isContentEditable) return true;
   return false;
 };
@@ -88,14 +105,16 @@ export const formatComboForDisplay = (combo, opts = {}) => {
   if (!normalized) return '';
 
   const platform = opts.platform || (typeof window !== 'undefined' ? window.platform : null);
-  const isMac = !!platform?.isMac;
+  const isMac = !!(platform?.isMac ?? (typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)));
+  const isLinux = !!(platform?.isLinux ?? (typeof navigator !== 'undefined' && /Linux/.test(navigator.platform)));
   const useSymbols = opts.useSymbols !== false;
 
   const parts = normalized.split('+').filter(Boolean);
   const mapped = parts.map((p) => {
     if (p === 'Meta') {
       if (isMac) return useSymbols ? '⌘' : 'Cmd';
-      return useSymbols ? 'Ctrl' : 'Ctrl';
+      if (isLinux) return 'Super';
+      return 'Ctrl';
     }
     if (p === 'Ctrl') return useSymbols ? (isMac ? '⌃' : 'Ctrl') : 'Ctrl';
     if (p === 'Alt') return useSymbols ? (isMac ? '⌥' : 'Alt') : 'Alt';

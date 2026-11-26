@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { defaultShortcuts } from '../../../utils/platform/preferences'
 import { analyzeShortcuts, normalizeShortcuts } from '../../../utils/platform/shortcuts'
 import { comboFromKeyboardEvent, formatComboForDisplay, isTypingContext, isValidCombo, normalizeCombo } from '../../../utils/platform/keybinds'
 import { getJson, setJson } from '../../../utils/platform/safeStorage'
 
+const isDialogOpen = () => {
+  try {
+    return typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Manages keyboard shortcuts state and their effects.
  */
-export function useShortcuts({ copyOutput, saveOutput, saveToFolder, pushToast }) {
+export function useShortcuts({ copyOutput, saveOutput, saveToFolder, pasteOutput, pushToast }) {
   const [shortcuts, setShortcuts] = useState(() => normalizeShortcuts(getJson('settings.shortcuts', defaultShortcuts)))
   const [shortcutRecordingKey, setShortcutRecordingKey] = useState(null)
+  const lastKeyPasteAtRef = useRef(0)
 
   // Listen for shortcut key recording
   useEffect(() => {
@@ -73,13 +82,27 @@ export function useShortcuts({ copyOutput, saveOutput, saveToFolder, pushToast }
     return formatComboForDisplay(normalized, { platform, useSymbols: true }) || normalized
   }, [])
 
-  // Dispatch global keyboard shortcuts (copy / save / save-to-folder)
+  // Dispatch global keyboard shortcuts (copy / save / save-to-folder / paste)
   useEffect(() => {
     const analysis = analyzeShortcuts(shortcuts)
     const conflictSet = new Set(Object.keys(analysis.conflicts || {}))
 
     const handleShortcuts = (e) => {
-      if (isTypingContext()) return
+      if (shortcutRecordingKey || isTypingContext() || isDialogOpen()) return
+
+      const isPasteCombo = (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        String(e.key || '').toLowerCase() === 'v'
+      )
+      if (isPasteCombo && typeof pasteOutput === 'function') {
+        e.preventDefault()
+        lastKeyPasteAtRef.current = Date.now()
+        void pasteOutput()
+        return
+      }
+
       const combo = normalizeCombo(comboFromKeyboardEvent(e))
       if (!combo) return
 
@@ -103,9 +126,22 @@ export function useShortcuts({ copyOutput, saveOutput, saveToFolder, pushToast }
       }
     }
 
+    const handlePaste = (e) => {
+      if (shortcutRecordingKey || isTypingContext() || isDialogOpen()) return
+      if (Date.now() - lastKeyPasteAtRef.current < 300) return
+      if (typeof pasteOutput === 'function') {
+        e.preventDefault()
+        void pasteOutput(e)
+      }
+    }
+
     window.addEventListener('keydown', handleShortcuts)
-    return () => window.removeEventListener('keydown', handleShortcuts)
-  }, [shortcuts, copyOutput, saveOutput, saveToFolder])
+    window.addEventListener('paste', handlePaste)
+    return () => {
+      window.removeEventListener('keydown', handleShortcuts)
+      window.removeEventListener('paste', handlePaste)
+    }
+  }, [shortcuts, shortcutRecordingKey, copyOutput, saveOutput, saveToFolder, pasteOutput])
 
   return { shortcuts, setShortcuts, shortcutRecordingKey, setShortcutRecordingKey, formatShortcutLabel }
 }

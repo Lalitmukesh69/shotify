@@ -1,15 +1,15 @@
 const shouldRestartExistingDevServer = (_env) => false;
 const killPort = (_port) => 0;
-const applyNextWatcherEnv = (env) => ({ ...env });
+const applyViteWatcherEnv = (env) => ({ ...env });
 
-const getNextDevSpawn = ({ nodeExe, nextBin, port }) => ({
+const getViteDevSpawn = ({ nodeExe, viteBin, port }) => ({
   cmd: nodeExe,
-  args: [nextBin, 'dev', '-p', String(port)],
+  args: [viteBin, '--port', String(port), '--strictPort'],
 });
 
 module.exports = {
   shouldRestartExistingDevServer,
   killPort,
-  applyNextWatcherEnv,
-  getNextDevSpawn,
+  applyViteWatcherEnv,
+  getViteDevSpawn,
 };

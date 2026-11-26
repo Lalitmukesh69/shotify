@@ -3,18 +3,21 @@ import { useAppContext } from './AppContext'
 export default function PresetSelectorTopRight() {
   const {
     isWindows,
+    showCustomWindowControls,
+    showSlimLinuxTitleBar,
     activePresetId, setActivePresetId,
     userPresets,
     presetDropdownRef,
     applyDefaultPreset, applyPresetSnapshot,
     setPresetNameDraft, setPresetNamePromptOpen,
   } = useAppContext()
+  const reserveRightControls = !showSlimLinuxTitleBar && (typeof showCustomWindowControls === 'boolean' ? showCustomWindowControls : isWindows)
 
   return (
     <div
       ref={presetDropdownRef}
       className="absolute top-4 window-no-drag z-40"
-      style={{ right: isWindows ? 108 : 16 }}
+      style={{ right: reserveRightControls ? 108 : 16 }}
     >
       <div className="relative">
         <button

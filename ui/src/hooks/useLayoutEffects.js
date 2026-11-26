@@ -250,7 +250,8 @@ export function useLayoutEffects({
       if (!annotationRect || !footerRect) return
 
       const safeGap = 24
-      const topInset = Math.max(0, annotationRect.bottom + safeGap)
+      const hostTop = fitViewportRef.current?.offsetParent?.getBoundingClientRect?.()?.top || 0
+      const topInset = Math.max(0, (annotationRect.bottom - hostTop) + safeGap)
       const bottomInset = Math.max(0, (window.innerHeight - footerRect.top) + safeGap)
 
       setSafeInsets((prev) => {

@@ -50,7 +50,8 @@ export function useScreenshotCapture({
         const applySrc = async (src) => {
           if (!src || typeof src !== 'string') return
 
-          const cleaned = (src.startsWith('data:image/'))
+          const isMac = typeof window !== 'undefined' && !!(window?.platform?.isMac ?? /Mac|iPhone|iPad|iPod/i.test(navigator?.platform || ''))
+          const cleaned = (isMac && src.startsWith('data:image/'))
             ? await trimMacOsWindowScreenshotDataUrl(src)
             : src
 

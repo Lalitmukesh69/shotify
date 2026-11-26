@@ -22,6 +22,12 @@ pub struct KeepInTrayState(pub AtomicBool);
 pub struct HasBeenFocusedState(pub AtomicBool);
 pub struct LastInteractionState(pub AtomicU64);
 
+static HAS_TRAY_HOST: AtomicBool = AtomicBool::new(cfg!(not(target_os = "linux")));
+
+pub fn has_tray_host() -> bool {
+  HAS_TRAY_HOST.load(Ordering::SeqCst)
+}
+
 fn apply_default_vibrancy_to_window(win: &tauri::WebviewWindow) {
   #[cfg(target_os = "macos")]
   {
@@ -39,6 +45,11 @@ fn apply_default_vibrancy_to_window(win: &tauri::WebviewWindow) {
     if apply_acrylic(win, Some((18, 18, 24, alpha))).is_err() {
       let _ = apply_blur(win, Some((18, 18, 24, alpha)));
     }
+  }
+
+  #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+  {
+    let _ = win;
   }
 }
 
@@ -250,10 +261,10 @@ pub fn app_open_screenshot_window_with_payload(
     label.clone(),
     tauri::WebviewUrl::App("/".into()),
   )
-    .title("shot.style")
+    .title("shotify")
     .inner_size(1320.0, 860.0)
     .resizable(true)
-    .transparent(true)
+    .transparent(!cfg!(target_os = "linux"))
     .decorations(false);
 
   let mut payload_for_init = args.payload.clone();
@@ -382,7 +393,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), tauri::Error> {
     // Provide a small tray menu to reopen or quit.
     let tray_menu = {
       let menu = MenuBuilder::new(app)
-        .item(&MenuItemBuilder::with_id("tray-show", "Open shot.style").build(app)?);
+        .item(&MenuItemBuilder::with_id("tray-show", "Open shotify").build(app)?);
 
       let menu = {
         #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -406,7 +417,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), tauri::Error> {
       .cloned()
       .expect("missing default window icon");
 
-    let _tray = TrayIconBuilder::new()
+    let tray_res = TrayIconBuilder::new()
       .menu(&tray_menu)
       .icon(icon)
       .on_menu_event(|app, event| {
@@ -429,7 +440,23 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), tauri::Error> {
           show_main_window_and_focus(&tray.app_handle());
         }
       })
-      .build(app)?;
+      .build(app);
+
+    match tray_res {
+      Ok(_tray) => {
+        HAS_TRAY_HOST.store(true, Ordering::SeqCst);
+      }
+      Err(err) => {
+        #[cfg(target_os = "linux")]
+        {
+          HAS_TRAY_HOST.store(false, Ordering::SeqCst);
+          log::warn!("[tray] system tray unavailable on this Linux session: {err}");
+          return Ok(());
+        }
+        #[cfg(not(target_os = "linux"))]
+        return Err(err);
+      }
+    }
   }
 
   Ok(())
@@ -450,7 +477,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
       .0
       .load(Ordering::SeqCst);
 
-    if keep_in_tray {
+    if keep_in_tray && has_tray_host() {
       let _ = window.hide();
       api.prevent_close();
     }

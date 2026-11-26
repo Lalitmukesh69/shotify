@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "shot.style",
+  "productName": "shotify",
+  "mainBinaryName": "shotify",
   "version": "1.0.0",
-  "identifier": "com.shotstyle.app",
+  "identifier": "com.shotify.app",
   "build": {
     "beforeDevCommand": "node ./scripts/tauri-before-dev.js",
     "beforeBuildCommand": "node ./scripts/tauri-before-build.js",
@@ -15,7 +16,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "shot.style",
+        "title": "shotify",
         "width": 1280,
         "height": 800,
         "minWidth": 900,
@@ -34,13 +35,24 @@
         "enable": true,
         "scope": [
           "$HOME/Pictures/**",
+          "$HOME/Downloads/**",
+          "/tmp/**",
           "$TEMP/**",
+          "/usr/share/backgrounds/**",
+          "/usr/share/wallpapers/**",
+          "/usr/local/share/backgrounds/**",
+          "/usr/local/share/wallpapers/**",
+          "$HOME/.local/share/backgrounds/**",
+          "$HOME/.local/share/wallpapers/**",
+          "$HOME/.cache/com.shotify.app/**",
+          "$HOME/.local/share/com.shotify.app/**",
           "$HOME/AppData/Local/Temp/**",
           "$HOME/AppData/Roaming/Microsoft/Windows/Themes/**",
           "$HOME/AppData/Local/Microsoft/Windows/Themes/**",
           "C:/Windows/Web/**",
           "$HOME/Library/Caches/shotstyle/tmp/**",
           "$HOME/Library/Caches/com.shotstyle.app/**",
+          "$HOME/Library/Caches/com.shotify.app/**",
           "/System/Library/Desktop Pictures/**",
           "/System/Library/Desktop Pictures/.thumbnails/**",
           "/System/Library/Desktop Pictures/.wallpapers/**",
@@ -54,11 +66,17 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
+    "category": "Utility",
+    "license": "GPL-3.0",
+    "licenseFile": "../LICENSE",
+    "shortDescription": "Screenshot capture, styling, and annotation tool",
+    "longDescription": "shotify is a desktop app for turning screenshots into polished, annotated, presentation-ready images across Linux, macOS, and Windows.",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ],

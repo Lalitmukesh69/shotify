@@ -286,6 +286,7 @@ export async function installTauriApi() {
     readFileAsAssetUrl,
     readFileAsAssetInfo,
     applyBackgroundFx,
+    readClipboardImage: () => invoke('clipboard_read_image_data_url'),
     writeClipboardImage,
 
     updateShortcuts: (payload) => invoke('preferences_update_shortcuts', { args: payload || {} }),
@@ -397,6 +398,7 @@ export async function installTauriApi() {
     }),
     captureCancel: ({ filePath } = {}) => invoke('capture_cancel', { args: { filePath } }),
     openSystemSettings: ({ pane } = {}) => invoke('open_system_settings', { args: { pane: String(pane || '') } }),
+    getPlatformCapabilities: () => invoke('platform_capabilities'),
 
     showMainWindowAndFocus: () => invoke('app_show_main_window'),
     hideMainWindow: () => invoke('app_hide_main_window'),

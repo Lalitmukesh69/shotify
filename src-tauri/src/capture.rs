@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(target_os = "linux")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -9,6 +11,9 @@ use uuid::Uuid;
 use crate::app::{show_main_window_and_focus, show_main_window_no_focus};
 use crate::images::write_temp_png;
 use crate::platform;
+
+#[cfg(target_os = "linux")]
+static LINUX_CAPTURE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +81,7 @@ pub struct ScreenshotErrorPayload {
   pub permission_pane: Option<String>,
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn clipboard_png_data_url_after_screencapture(mode: Option<&str>) -> Result<String, String> {
   platform::clipboard_png_data_url_after_screencapture(mode)
 }
@@ -121,7 +127,23 @@ pub async fn screenshot_capture_to_file(app: tauri::AppHandle, args: ScreenshotC
       return Err("Only region screenshot mode is supported on Linux".to_string());
     }
 
-    let intent = if mode == "instant" || mode == "region-copy" {
+    if mode == "instant" {
+      if let Some(main) = app.get_webview_window("main") {
+        let _ = main.hide();
+      }
+      let _ = tauri::async_runtime::spawn_blocking(|| {
+        std::thread::sleep(std::time::Duration::from_millis(75));
+      })
+      .await;
+      let captured = platform::linux::capture_screen_for_linux(&app, false).await;
+      show_main_window_no_focus(&app);
+      return match captured? {
+        platform::linux::LinuxCaptureOutcome::OverlayFile(path)
+        | platform::linux::LinuxCaptureOutcome::DirectImage(path) => Ok(path),
+      };
+    }
+
+    let intent = if mode == "region-copy" {
       Some("copyOutput")
     } else {
       None
@@ -140,45 +162,63 @@ pub async fn screenshot_capture_to_file(app: tauri::AppHandle, args: ScreenshotC
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-pub(crate) fn open_capture_overlay(app: &tauri::AppHandle, intent: Option<&str>) -> Result<(), String> {
-  // Hide the main app window before opening the fullscreen overlay so
-  // monitor screenshots don't just capture the app itself.
-  if let Some(main) = app.get_webview_window("main") {
-    let _ = main.hide();
+fn percent_encode_query_value(value: &str) -> String {
+  let mut out = String::with_capacity(value.len());
+  for b in value.as_bytes() {
+    match b {
+      b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+        out.push(*b as char);
+      }
+      _ => {
+        out.push_str(&format!("%{:02X}", b));
+      }
+    }
   }
+  out
+}
 
-  let label = "capture";
-  let url = if let Some(intent) = intent {
-    tauri::WebviewUrl::App(format!("capture?intent={}", intent).into())
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn build_capture_url(intent: Option<&str>, file_path: Option<&str>) -> tauri::WebviewUrl {
+  let mut params: Vec<String> = Vec::new();
+  if let Some(intent) = intent.filter(|s| !s.trim().is_empty()) {
+    params.push(format!("intent={}", percent_encode_query_value(intent)));
+  }
+  if let Some(file_path) = file_path.filter(|s| !s.trim().is_empty()) {
+    params.push(format!("filePath={}", percent_encode_query_value(file_path)));
+  }
+  if params.is_empty() {
+    tauri::WebviewUrl::App("capture.html".into())
   } else {
-    tauri::WebviewUrl::App("capture".into())
-  };
-
-  #[derive(Debug, Clone, Serialize)]
-  #[serde(rename_all = "camelCase")]
-  struct CaptureResetPayload {
-    intent: Option<String>,
-    file_path: Option<String>,
-    nonce: String,
+    tauri::WebviewUrl::App(format!("capture.html?{}", params.join("&")).into())
   }
+}
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn create_or_show_capture_window(
+  app: &tauri::AppHandle,
+  intent: Option<&str>,
+  file_path: Option<&str>,
+) -> Result<tauri::WebviewWindow, String> {
+  let label = "capture";
   let win = if let Some(win) = app.get_webview_window(label) {
-    // Ensure intent changes (Ctrl+Shift+8 vs Ctrl+Shift+9) are reflected.
-    // We also reset the React state via an event so we don't keep the previous selection.
-    let _ = win.eval(&match intent {
-      Some(v) => format!("window.location.replace('/capture?intent={}');", v),
-      None => "window.location.replace('/capture');".to_string(),
-    });
     let _ = win.show();
     win
   } else {
-    tauri::WebviewWindowBuilder::new(app, label, url)
+    let url = build_capture_url(intent, file_path);
+    let builder = tauri::WebviewWindowBuilder::new(app, label, url)
       .title("Capture")
       .decorations(false)
       .resizable(false)
       .always_on_top(true)
-      .skip_taskbar(true)
-      .maximized(true)
+      .skip_taskbar(true);
+
+    #[cfg(target_os = "linux")]
+    let builder = builder.transparent(false).fullscreen(true);
+
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder.maximized(true);
+
+    builder
       .build()
       .map_err(|e| format!("Failed to open capture window: {e}"))?
   };
@@ -187,9 +227,26 @@ pub(crate) fn open_capture_overlay(app: &tauri::AppHandle, intent: Option<&str>)
   // which causes the screenshot (full monitor) to be scaled/letterboxed.
   // Fullscreen ensures 1:1 alignment with the captured monitor image.
   platform::configure_capture_overlay_window(&win);
-
   let _ = win.set_ignore_cursor_events(false);
   let _ = win.set_focus();
+  Ok(win)
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub(crate) fn open_capture_overlay(app: &tauri::AppHandle, intent: Option<&str>) -> Result<(), String> {
+  // Hide the main app window before opening the fullscreen overlay so
+  // monitor screenshots don't just capture the app itself.
+  if let Some(main) = app.get_webview_window("main") {
+    let _ = main.hide();
+  }
+
+  #[derive(Debug, Clone, Serialize)]
+  #[serde(rename_all = "camelCase")]
+  struct CaptureResetPayload {
+    intent: Option<String>,
+    file_path: Option<String>,
+    nonce: String,
+  }
 
   let intent_owned = intent.map(|s| s.to_string());
   let nonce = Uuid::new_v4().to_string();
@@ -201,9 +258,9 @@ pub(crate) fn open_capture_overlay(app: &tauri::AppHandle, intent: Option<&str>)
   //    appearing at all.  The overlay shows "Loading screenshot…" until the
   //    image arrives; any drag the user starts before it loads is queued and
   //    flushed automatically once the image is ready.
-  // ── Linux / other: no pre-capture; JS uses tauri-plugin-screenshots.
   #[cfg(target_os = "windows")]
   {
+    let win = create_or_show_capture_window(app, intent, None)?;
     // First event: open the overlay with no image yet.
     let _ = win.emit(
       "capture-reset",
@@ -239,21 +296,105 @@ pub(crate) fn open_capture_overlay(app: &tauri::AppHandle, intent: Option<&str>)
         );
       }
     });
+    return Ok(());
   }
 
-  #[cfg(not(target_os = "windows"))]
+  // ── Linux: grab the screen BEFORE displaying an opaque capture window so
+  //    grim / xcap / portals never photograph our own fullscreen overlay.
+  #[cfg(target_os = "linux")]
   {
-    let _ = win.emit(
-      "capture-reset",
-      CaptureResetPayload {
-        intent: intent_owned,
-        file_path: None,
-        nonce,
-      },
-    );
-  }
+    if let Some(existing) = app.get_webview_window("capture") {
+      let _ = existing.hide();
+    }
 
-  Ok(())
+    if LINUX_CAPTURE_IN_FLIGHT
+      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+      .is_err()
+    {
+      return Ok(());
+    }
+
+    struct LinuxCaptureInFlightGuard;
+    impl Drop for LinuxCaptureInFlightGuard {
+      fn drop(&mut self) {
+        LINUX_CAPTURE_IN_FLIGHT.store(false, Ordering::SeqCst);
+      }
+    }
+
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+      let _guard = LinuxCaptureInFlightGuard;
+      let _ = tauri::async_runtime::spawn_blocking(|| {
+        std::thread::sleep(std::time::Duration::from_millis(75));
+      })
+      .await;
+
+      match platform::linux::capture_screen_for_linux(&app_clone, true).await {
+        Ok(platform::linux::LinuxCaptureOutcome::OverlayFile(file_path)) => {
+          match create_or_show_capture_window(&app_clone, intent_owned.as_deref(), Some(&file_path)) {
+            Ok(win) => {
+              let _ = win.emit(
+                "capture-reset",
+                CaptureResetPayload {
+                  intent: intent_owned,
+                  file_path: Some(file_path),
+                  nonce,
+                },
+              );
+            }
+            Err(err) => {
+              let _ = fs::remove_file(&file_path);
+              show_main_window_and_focus(&app_clone);
+              let _ = app_clone.emit(
+                "screenshot-error",
+                ScreenshotErrorPayload {
+                  error: err,
+                  source: Some("region-capture".to_string()),
+                  kind: None,
+                  permission_pane: None,
+                },
+              );
+            }
+          }
+        }
+        Ok(platform::linux::LinuxCaptureOutcome::DirectImage(file_path)) => {
+          close_capture_window(&app_clone);
+          if matches!(intent_owned.as_deref(), Some("copyOutput")) {
+            show_main_window_no_focus(&app_clone);
+          } else {
+            show_main_window_and_focus(&app_clone);
+          }
+          if let Some(main_win) = app_clone.get_webview_window("main") {
+            let _ = main_win.emit(
+              "screenshot-captured",
+              ScreenshotCapturedPayload {
+                data_url: None,
+                file_path: Some(file_path),
+                source: "linux-portal-capture".to_string(),
+                intent: intent_owned,
+              },
+            );
+          }
+        }
+        Err(err) => {
+          show_main_window_and_focus(&app_clone);
+          if !err.to_ascii_lowercase().contains("cancel") {
+            let _ = app_clone.emit(
+              "screenshot-error",
+              ScreenshotErrorPayload {
+                error: err,
+                source: Some("region-capture".to_string()),
+                kind: None,
+                permission_pane: None,
+              },
+            );
+          }
+        }
+      }
+    });
+
+    Ok(())
+  }
 }
 
 fn close_capture_window(app: &tauri::AppHandle) {

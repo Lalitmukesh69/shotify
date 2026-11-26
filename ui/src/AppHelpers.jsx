@@ -119,8 +119,16 @@ export const RATIO_OPTIONS = [
 const PREVIEW_MAX_W = 22
 const PREVIEW_MAX_H = 14
 
+const isLinuxPlatform = () => {
+  try {
+    return typeof window !== 'undefined' && !!(window?.platform?.isLinux ?? /Linux/i.test(navigator?.platform || ''))
+  } catch {
+    return false
+  }
+}
+
 export const DEFAULT_GENERAL_SETTINGS = Object.freeze({
-  hideAppWhenUnfocused: true,
+  hideAppWhenUnfocused: !isLinuxPlatform(),
   keepAppInTray: true,
   hideWindowOnLaunch: false,
   openAtLogin: false,

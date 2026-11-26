@@ -10,6 +10,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'tauri-plugin-screenshots-api': path.resolve(__dirname, 'tests/mocks/tauri-plugin-screenshots-api.js'),
       '@theme-toggles/react': path.resolve(__dirname, 'tests/mocks/theme-toggles-react.js'),
       '@theme-toggles/react/css/Classic.css': path.resolve(__dirname, 'tests/mocks/empty-style.js'),

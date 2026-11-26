@@ -16,8 +16,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 
 use app::{AutoHideState, HasBeenFocusedState, KeepInTrayState, LastInteractionState};
-use shortcuts::GlobalShortcutState;
-use tauri::Manager;
+use images::ClipboardState;
+use shortcuts::{get_shortcut_backend_info, GlobalShortcutState, ShortcutBackendState};
+use tauri::{Emitter, Manager};
 
 use app::{
   app_open_feedback_external,
@@ -40,6 +41,7 @@ use images::{
   backgrounds_delete_custom,
   backgrounds_list_custom,
   backgrounds_save_custom,
+  clipboard_read_image_data_url,
   clipboard_write_image_data_url,
   exports_apply_watermark,
   exports_save_to_downloads,
@@ -293,8 +295,118 @@ fn annotation_pen_outline_path(args: AnnotationPenOutlinePathArgs) -> String {
   d
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformCapabilities {
+  os: String,
+  display_server: Option<String>,
+  compositor: Option<String>,
+  global_shortcuts_mode: String,
+  supports_open_at_login: bool,
+  supports_dock_hide: bool,
+  has_tray_host: bool,
+}
+
+#[tauri::command]
+fn platform_capabilities(app: tauri::AppHandle) -> PlatformCapabilities {
+  let (global_shortcuts_mode, _) = get_shortcut_backend_info(&app);
+  #[cfg(target_os = "linux")]
+  let (display_server, compositor) = {
+    let caps = platform::linux::detect_capabilities();
+    (Some(caps.display_server), Some(caps.compositor))
+  };
+  #[cfg(not(target_os = "linux"))]
+  let (display_server, compositor): (Option<String>, Option<String>) = (None, None);
+
+  PlatformCapabilities {
+    os: std::env::consts::OS.to_string(),
+    display_server,
+    compositor,
+    global_shortcuts_mode,
+    supports_open_at_login: cfg!(any(target_os = "macos", target_os = "linux")),
+    supports_dock_hide: cfg!(target_os = "macos"),
+    has_tray_host: app::has_tray_host(),
+  }
+}
+
+fn handle_cli_args(app: &tauri::AppHandle, argv: &[String], from_second_instance: bool) {
+  let has_flag = |flag: &str| argv.iter().any(|arg| arg == flag);
+
+  if has_flag("--capture-copy") {
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+      let _ = capture::open_capture_overlay(app, Some("copyOutput"));
+    }
+    return;
+  }
+
+  if has_flag("--capture") {
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+      let _ = capture::open_capture_overlay(app, None);
+    }
+    return;
+  }
+
+  if has_flag("--capture-instant") {
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+      match capture::screenshot_capture_to_file(
+        app_clone.clone(),
+        capture::ScreenshotCaptureArgs {
+          mode: Some("instant".to_string()),
+        },
+      )
+      .await
+      {
+        Ok(out) if out != "overlay-opened" => {
+          app::show_main_window_and_focus(&app_clone);
+          if let Some(main_win) = app_clone.get_webview_window("main") {
+            let trimmed = out.trim();
+            let (data_url, file_path) = if trimmed.starts_with("data:") {
+              (Some(trimmed.to_string()), None)
+            } else {
+              (None, Some(trimmed.to_string()))
+            };
+            let _ = main_win.emit(
+              "screenshot-captured",
+              capture::ScreenshotCapturedPayload {
+                data_url,
+                file_path,
+                source: "cli-instant".to_string(),
+                intent: None,
+              },
+            );
+          }
+        }
+        Ok(_) => {}
+        Err(err) => {
+          app::show_main_window_and_focus(&app_clone);
+          let _ = app_clone.emit(
+            "screenshot-error",
+            capture::ScreenshotErrorPayload {
+              error: err,
+              source: Some("cli-instant".to_string()),
+              kind: None,
+              permission_pane: None,
+            },
+          );
+        }
+      }
+    });
+    return;
+  }
+
+  if has_flag("--show") || from_second_instance {
+    app::show_main_window_and_focus(app);
+  }
+}
+
 fn main() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+      handle_cli_args(app, &argv, true);
+    }))
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
     .plugin(tauri_plugin_log::Builder::new().build())
@@ -302,6 +414,8 @@ fn main() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_screenshots::init())
     .manage(GlobalShortcutState::default())
+    .manage(ShortcutBackendState::default())
+    .manage(ClipboardState::default())
     .manage(VibrancyDebugState::default())
     // Default to visible, non-auto-hiding behavior.
     // Default to menu-bar style auto-hide; JS temporarily disables around native dialogs.
@@ -328,6 +442,7 @@ fn main() {
       capture_region_submit_data_url,
       capture_cancel,
       image_apply_fx_bytes,
+      clipboard_read_image_data_url,
       clipboard_write_image_data_url,
       open_system_settings,
       preferences_update_shortcuts,
@@ -346,6 +461,7 @@ fn main() {
       app_window_toggle_maximize,
       vibrancy_debug_status,
       vibrancy_debug_apply,
+      platform_capabilities,
       annotation_pen_outline_path,
       ui_shadow_hug_preset,
     ])
@@ -383,8 +499,12 @@ fn main() {
       }
       ui_experimentation::install_ui_experimentation_wiring(&app.handle());
       app::setup_tray(app).map_err(|e| Box::<dyn std::error::Error>::from(e))?;
-      shortcuts::setup_global_shortcuts(&app.handle()).map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+      if let Err(err) = shortcuts::setup_global_shortcuts(&app.handle()) {
+        log::warn!("[shortcuts] global shortcut setup failed (continuing): {err}");
+      }
       shortcuts::register_default_shortcuts(&app.handle());
+      let startup_args: Vec<String> = std::env::args().collect();
+      handle_cli_args(&app.handle(), &startup_args, false);
       Ok(())
     })
     .on_window_event(|window, event| {

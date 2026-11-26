@@ -142,18 +142,26 @@ pub struct ClipboardWriteImageArgs {
   pub data_url: String,
 }
 
+pub struct ClipboardState(pub std::sync::Mutex<Option<arboard::Clipboard>>);
+
+impl Default for ClipboardState {
+  fn default() -> Self {
+    Self(std::sync::Mutex::new(None))
+  }
+}
+
 fn app_custom_backgrounds_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
   let base = app
     .path()
     .app_data_dir()
     .map_err(|e| format!("Failed to resolve app_data_dir: {e}"))?;
-  Ok(base.join("shot.style").join("backgrounds"))
+  Ok(base.join("shotify").join("backgrounds"))
 }
 
 fn sanitize_file_stem(name: &str) -> String {
   let trimmed = name.trim();
   if trimmed.is_empty() {
-    return "shot.style".to_string();
+    return "shotify".to_string();
   }
   let cleaned = trimmed
     .replace(['/', '\\'], "-")
@@ -165,7 +173,7 @@ fn sanitize_file_stem(name: &str) -> String {
     .replace('>', "")
     .replace('|', "");
   if cleaned.trim().is_empty() {
-    "shot.style".to_string()
+    "shotify".to_string()
   } else {
     cleaned
   }
@@ -622,6 +630,25 @@ pub async fn read_file_as_asset(app: tauri::AppHandle, args: ReadFileAsAssetArgs
         return Ok(ReadFileAsAssetResult { file_path: out_path.to_string_lossy().to_string() });
       }
 
+      #[cfg(target_os = "linux")]
+      {
+        if let Ok(png_bytes) = crate::platform::linux::rasterize_image_to_png_with_gdk(&path, max_dim) {
+          let out_path = if let Some(cache_path) = cached_png_path(&app, &key) {
+            if let Some(parent) = cache_path.parent() {
+              fs::create_dir_all(parent).map_err(|err| format!("Failed to create cache dir: {err}"))?;
+            }
+            fs::write(&cache_path, &png_bytes)
+              .map_err(|err| format!("Failed to write cached PNG: {err}"))?;
+            cache_path
+          } else {
+            write_temp_png(&png_bytes)?
+          };
+          return Ok(ReadFileAsAssetResult {
+            file_path: out_path.to_string_lossy().to_string(),
+          });
+        }
+      }
+
       #[allow(unreachable_code)]
       Err(format!("Failed to decode image: {e}"))
     }
@@ -653,8 +680,12 @@ pub async fn image_apply_fx_bytes(_app: tauri::AppHandle, args: ImageApplyFxByte
 }
 
 #[tauri::command]
-pub async fn clipboard_write_image_data_url(_app: tauri::AppHandle, args: ClipboardWriteImageArgs) -> Result<(), String> {
-  let (_mime, bytes) = decode_data_url(&args.data_url)?;
+pub async fn clipboard_write_image_data_url(
+  app: tauri::AppHandle,
+  clipboard_state: tauri::State<'_, ClipboardState>,
+  args: ClipboardWriteImageArgs,
+) -> Result<(), String> {
+  let (mime, bytes) = decode_data_url(&args.data_url)?;
 
   let img = image::load_from_memory(&bytes)
     .map_err(|e| format!("Failed to decode image: {e}"))?
@@ -663,16 +694,151 @@ pub async fn clipboard_write_image_data_url(_app: tauri::AppHandle, args: Clipbo
   let (w, h) = img.dimensions();
   let rgba = img.into_raw();
 
-  let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("Clipboard init failed: {e}"))?;
-  clipboard
-    .set_image(arboard::ImageData {
+  let arboard_result = (|| -> Result<(), String> {
+    let mut guard = clipboard_state
+      .0
+      .lock()
+      .map_err(|_| "Clipboard lock poisoned".to_string())?;
+    if guard.is_none() {
+      *guard = Some(arboard::Clipboard::new().map_err(|e| format!("Clipboard init failed: {e}"))?);
+    }
+    let clipboard = guard
+      .as_mut()
+      .ok_or_else(|| "Clipboard unavailable".to_string())?;
+    if let Err(err) = clipboard.set_image(arboard::ImageData {
       width: w as usize,
       height: h as usize,
-      bytes: std::borrow::Cow::Owned(rgba),
-    })
-    .map_err(|e| format!("Clipboard write failed: {e}"))?;
+      bytes: std::borrow::Cow::Owned(rgba.clone()),
+    }) {
+      *guard = None;
+      return Err(format!("Clipboard write failed: {err}"));
+    }
+    Ok(())
+  })();
+
+  if let Err(err) = arboard_result {
+    #[cfg(target_os = "linux")]
+    {
+      let png_bytes = if mime == "image/png" {
+        bytes
+      } else {
+        use image::ImageEncoder;
+        let mut out = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut out)
+          .write_image(&rgba, w, h, image::ExtendedColorType::Rgba8)
+          .map_err(|e| format!("Failed to encode clipboard PNG: {e}"))?;
+        out
+      };
+      return crate::platform::linux::clipboard_write_png_fallback(&app, &png_bytes)
+        .map_err(|fallback_err| format!("{err}; fallback failed: {fallback_err}"));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+      let _ = &app;
+      let _ = &mime;
+      return Err(err);
+    }
+  }
 
   Ok(())
+}
+
+fn encode_rgba_slice_to_png(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>, String> {
+  use image::ImageEncoder;
+  let mut out = Vec::new();
+  image::codecs::png::PngEncoder::new(&mut out)
+    .write_image(rgba, w, h, image::ExtendedColorType::Rgba8)
+    .map_err(|e| format!("Failed to encode PNG: {e}"))?;
+  Ok(out)
+}
+
+#[tauri::command]
+pub async fn clipboard_read_image_data_url(
+  app: tauri::AppHandle,
+  clipboard_state: tauri::State<'_, ClipboardState>,
+) -> Result<Option<String>, String> {
+  enum ArboardOutcome {
+    Image { rgba: Vec<u8>, width: u32, height: u32 },
+    Text(String),
+    None,
+  }
+
+  let arboard_res = (|| -> ArboardOutcome {
+    let Ok(mut guard) = clipboard_state.0.lock() else {
+      return ArboardOutcome::None;
+    };
+    if guard.is_none() {
+      let Ok(cb) = arboard::Clipboard::new() else {
+        return ArboardOutcome::None;
+      };
+      *guard = Some(cb);
+    }
+    let Some(clipboard) = guard.as_mut() else {
+      return ArboardOutcome::None;
+    };
+    if let Ok(img) = clipboard.get_image() {
+      return ArboardOutcome::Image {
+        rgba: img.bytes.into_owned(),
+        width: img.width as u32,
+        height: img.height as u32,
+      };
+    }
+    if let Ok(text) = clipboard.get_text() {
+      return ArboardOutcome::Text(text);
+    }
+    ArboardOutcome::None
+  })();
+
+  match arboard_res {
+    ArboardOutcome::Image { rgba, width, height } if width > 0 && height > 0 => {
+      let png_bytes = encode_rgba_slice_to_png(&rgba, width, height)?;
+      return Ok(Some(format!("data:image/png;base64,{}", STANDARD.encode(png_bytes))));
+    }
+    ArboardOutcome::Text(text) => {
+      #[cfg(target_os = "linux")]
+      {
+        if let Some(path) = crate::platform::linux::decode_clipboard_file_uri_or_path(&text) {
+          if let Ok(bytes) = fs::read(&path) {
+            if let Ok(img) = image::load_from_memory(&bytes) {
+              let rgba = img.to_rgba8();
+              let (w, h) = rgba.dimensions();
+              let png_bytes = encode_rgba_slice_to_png(rgba.as_raw(), w, h)?;
+              return Ok(Some(format!("data:image/png;base64,{}", STANDARD.encode(png_bytes))));
+            }
+            if let Ok(png_bytes) = crate::platform::linux::rasterize_image_to_png_with_gdk(&path, 0) {
+              return Ok(Some(format!("data:image/png;base64,{}", STANDARD.encode(png_bytes))));
+            }
+          }
+        }
+      }
+      #[cfg(not(target_os = "linux"))]
+      {
+        let _ = text;
+      }
+    }
+    _ => {}
+  }
+
+  #[cfg(target_os = "linux")]
+  {
+    let app_clone = app.clone();
+    let fallback_bytes = tauri::async_runtime::spawn_blocking(move || {
+      crate::platform::linux::clipboard_read_image_png_fallback(&app_clone)
+    })
+    .await
+    .map_err(|e| format!("Clipboard read task failed: {e}"))??;
+
+    if let Some(png_bytes) = fallback_bytes {
+      return Ok(Some(format!("data:image/png;base64,{}", STANDARD.encode(png_bytes))));
+    }
+  }
+
+  #[cfg(not(target_os = "linux"))]
+  {
+    let _ = app;
+  }
+
+  Ok(None)
 }
 
 #[tauri::command]
@@ -908,7 +1074,14 @@ fn is_wallpaper_image(path: &Path) -> bool {
         "jpg" | "jpeg" | "png" | "webp" | "bmp" | "heic" | "heif" | "avif" | "mov" | "mp4" | "m4v"
       )
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+      matches!(
+        ext.as_str(),
+        "jpg" | "jpeg" | "png" | "webp" | "bmp" | "heic" | "heif" | "avif" | "svg"
+      )
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
     {
       matches!(
         ext.as_str(),
@@ -1066,6 +1239,8 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
   }
 
   #[cfg(target_os = "linux")]
+  let mut direct_linux_paths: Vec<PathBuf> = vec![];
+  #[cfg(target_os = "linux")]
   {
     roots.push(PathBuf::from("/usr/share/backgrounds"));
     roots.push(PathBuf::from("/usr/share/wallpapers"));
@@ -1084,6 +1259,16 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
     if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
       roots.push(PathBuf::from(&xdg_data_home).join("backgrounds"));
       roots.push(PathBuf::from(&xdg_data_home).join("wallpapers"));
+    }
+
+    for extra in crate::platform::linux::detect_extra_wallpaper_paths() {
+      if extra.is_file() {
+        if is_wallpaper_image(&extra) {
+          direct_linux_paths.push(extra);
+        }
+      } else if extra.is_dir() {
+        roots.push(extra);
+      }
     }
   }
 
@@ -1109,6 +1294,19 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
 
     if paths.len() >= max {
       break;
+    }
+  }
+
+  #[cfg(target_os = "linux")]
+  {
+    for p in direct_linux_paths {
+      if paths.len() >= max {
+        break;
+      }
+      let key = p.to_string_lossy().to_lowercase();
+      if seen.insert(key) {
+        paths.push(p);
+      }
     }
   }
 
@@ -1210,11 +1408,23 @@ pub async fn exports_save_to_downloads(app: tauri::AppHandle, args: SaveExportAr
   let base_dir = app
     .path()
     .download_dir()
+    .or_else(|e| {
+      #[cfg(target_os = "linux")]
+      {
+        if let Some(home) = std::env::var_os("HOME") {
+          let downloads = PathBuf::from(home).join("Downloads");
+          if downloads.exists() {
+            return Ok(downloads);
+          }
+        }
+      }
+      Err(e)
+    })
     .or_else(|_| app.path().desktop_dir())
     .or_else(|_| app.path().app_data_dir())
     .map_err(|e| format!("Failed to resolve output directory: {e}"))?;
 
-  let out_dir = base_dir.join("shot.style");
+  let out_dir = base_dir.join("shotify");
   fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create export dir: {e}"))?;
 
   let raw_name = sanitize_file_stem(&args.file_name);
@@ -1222,7 +1432,7 @@ pub async fn exports_save_to_downloads(app: tauri::AppHandle, args: SaveExportAr
   let stem = requested_path
     .file_stem()
     .and_then(|s| s.to_str())
-    .unwrap_or("shot.style")
+    .unwrap_or("shotify")
     .to_string();
 
   let ext = requested_path

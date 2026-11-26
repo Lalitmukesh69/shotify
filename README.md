@@ -1,293 +1,267 @@
-# shot.style
+# shotify
 
 <p align="center">
-	<img src="./ui/shotstylelogo.svg" width="220" alt="shot.style logo">
+  <img src="./ui/shotstylelogo.svg" width="160" alt="shotify logo">
+</p>
+
+<h3 align="center">Screenshots, gently composed.</h3>
+
+<p align="center">
+  Capture, frame, annotate, and export presentation-ready screenshots in seconds.<br>
+  An open-source, local-first desktop app built for <b>Linux</b>, <b>macOS</b>, and <b>Windows</b>.
 </p>
 
 <p align="center">
-	<img src="https://img.shields.io/badge/macOS%20%7C%20Windows-111827?style=for-the-badge" alt="macOS Windows" />
-	<img src="https://img.shields.io/badge/open%20source-GPL--3.0-2563eb?style=for-the-badge" alt="GPL-3.0 license" />
+  <a href="https://lalitmukesh69.github.io/shotify/"><img src="https://img.shields.io/badge/Website-GitHub%20Pages-000000?style=for-the-badge&logo=github" alt="Website" /></a>
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-111827?style=for-the-badge" alt="Linux | macOS | Windows" />
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-2563eb?style=for-the-badge" alt="GPL-3.0 License" /></a>
+  <a href="https://github.com/Lalitmukesh69/shotify/releases/latest"><img src="https://img.shields.io/github/v/release/Lalitmukesh69/shotify?style=for-the-badge&color=10b981" alt="Latest Release" /></a>
 </p>
-
-### Create polished, presentation-ready screenshots instantly.
-[shot.style](https://github.com/webadderall/shot) is an open-source desktop app for capturing, styling, annotating, and exporting screenshots with gradients, wallpapers, blob backgrounds, shadows, mockups, rounded corners, watermark controls, and desktop-native save or copy flows.
-> [!NOTE]
-> This is just a side project I made to solve my own problem that I'm open-sourcing now.
 
 <p align="center">
-	<img src="./docs/media/shotdemo.gif" width="750" alt="shot.style demo video">
+  <img src="./docs/media/shotdemo.gif" width="780" alt="shotify animated demo">
 </p>
 
 ---
 
-## What is shot.style?
+## Overview
 
-shot.style is a desktop-first screenshot capture and styling tool. Instead of taking a screenshot and finishing the presentation work in multiple other apps, shot.style keeps the common workflow in one place: capture the image, add framing and polish, annotate it, and export a clean final asset.
+**shotify** is a native desktop app designed to streamline the screenshot workflow. Instead of snapping a raw capture and juggling three different apps to crop, frame, annotate, and clean it up, shotify handles the entire flow in one calm place.
 
-shot.style targets:
-
-- **macOS**
-- **Windows**
-
-Platform notes:
-
-- **macOS** supports desktop-native screenshot and export workflows through the Tauri shell and native helpers.
-- **Windows** uses the same desktop UI with platform-specific native integration through Tauri.
+- **100% Local & Private:** No cloud uploads, no external tracking, no accounts. Your images never leave your machine.
+- **Cross-Platform:** Native support across Linux (Wayland & X11), macOS (Apple Silicon & Intel), and Windows (64-bit).
+- **Fast & Lightweight:** Built on Tauri v2 and Rust for minimal memory footprint and instant startup.
+- **Identical Preview & Export:** What you compose on the interactive canvas is pixel-for-pixel what gets copied or saved.
 
 ---
 
-# Core Features
+## Screenshots & Interface
 
-## Capture, frame, and polish screenshots in one workflow
-shot.style can capture screenshots directly in the desktop app, then place them inside gradients, wallpapers, colors, blob backgrounds, browser bars, OS mockups, padding, rounded corners, and shadow treatments without leaving the editor.
+### Live Editor Canvas
+Frame your screenshots with system wallpapers, gradient harmonics, organic blur blobs, browser bars, and adjustable shadows.
 
-<p>
-	<img src="./docs/media/interfacescreenshot.png" width="450" alt="shot.style feature 1 interface screenshot">
+<p align="center">
+  <img src="./docs/media/interfacescreenshot.png" width="600" alt="shotify editor interface">
 </p>
 
-## Annotate and refine presentation details
-Add pen and shape annotations, tune inset and border styling, rotate and position the screenshot, adjust background effects, and optionally apply watermark text or badges for quick sharing workflows.
+### Annotation Tools
+Highlight key details with pens, arrows, boxes, ellipses, and numbered step badges.
 
-<p>
-	<img src="./docs/media/annotationexample.png" width="450" alt="shot.style feature 2 annotation example">
+<p align="center">
+  <img src="./docs/media/annotationexample.png" width="600" alt="shotify annotations">
 </p>
 
-## Export to file, folder, or clipboard
-The app supports desktop-native export flows for saving directly, saving into a chosen folder, or copying the final rendered image to the clipboard with the same styling pipeline used in preview.
+### Final Export Example
+Generate polished assets ready for documentation, product launches, presentations, and social sharing.
 
-<p>
-	<img src="./docs/media/exportinterface.png" width="450" alt="shot.style feature 3 export interface">
+<p align="center">
+  <img src="./docs/media/shotexample.png" width="600" alt="shotify styled screenshot output">
 </p>
-
-## Example output
-This is the kind of final asset the app is meant to produce after framing, styling, and export.
-
-<p>
-	<img src="./docs/media/shotexample.png" width="450" alt="shot.style example exported image">
-</p>
-
-## All Features
-
-### Capture
-
-- Capture screenshots from the desktop app
-- Insert captured screenshots directly into the editor
-- Reuse captured images without switching tools
-- Support screenshot-focused desktop workflows instead of browser-only upload flows
-
-### Editing and Presentation
-
-- Background gradients
-- Blob gradient backgrounds
-- Solid color backgrounds
-- System wallpaper selection
-- Custom uploaded wallpapers
-- Browser bar and OS mockup framing
-- Padding and inset controls
-- Rounded corners and border controls
-- Shadow presets and custom shadow tuning
-- Rotation and transform positioning
-- Aspect ratio presets
-- Auto-crop option
-
-### Annotations and Branding
-
-- Pen annotations
-- Shape annotations
-- Watermark text
-- Watermark position and offset controls
-- Optional social-style watermark prefix and badge toggles
-
-### Export
-
-- Save image through desktop-native dialogs
-- Save image directly into a selected folder
-- Copy final image to clipboard
-- PNG, JPEG, and WebP export options
-- Export scaling and quality controls
-- Export pipeline tuned for desktop-safe local assets and canvases
-
-### Workflow and Usability
-
-- Custom keyboard shortcuts
-- Settings modal for desktop behavior and shortcut preferences
-- Close-after-copy/save/save-to-folder options
-- Shared rendering pipeline between preview and export
-- Desktop-first Tauri shell with native file and screenshot integration
 
 ---
 
-# Installation
+## Features
 
-## Download a build
+### 📸 Capture
+- **Global Shortcuts:** Configurable system-wide hotkeys for instant regional, window, or fullscreen capture.
+- **Direct Paste:** Paste an image directly from the clipboard (`Ctrl+V` / `Cmd+V`) into the editor.
+- **Drag & Drop:** Drop any PNG, JPEG, or WebP into the canvas to frame existing images.
 
-Prebuilt desktop releases should be published on the repository Releases page.
+### 🎨 Framing & Composition
+- **Backgrounds:**
+  - System wallpaper autodetection
+  - 30+ handcrafted harmonic gradients
+  - Organic animated blob backdrops
+  - Solid studio colors and custom image uploads
+- **Window Mockups:**
+  - macOS style window bar (traffic light controls)
+  - Windows style header bar
+  - Minimal / borderless clean frame
+- **Spacing & Shadows:**
+  - Slider controls for padding (16px – 96px)
+  - Corner radius (0px – 32px)
+  - Drop shadow depth, opacity, and soft diffusion
+  - 3D perspective tilt (-6° to +6°)
+- **Aspect Ratio Presets:** 16:9, 4:3, 1:1, Twitter/X header, auto-crop.
 
-GitHub Actions release workflows can build macOS and Windows installers from a tagged release or a manual dispatch.
+### ✏️ Annotation & Branding
+- Smooth freehand drawing pen with color selection
+- Precision geometric shapes (rectangles, circles, arrows)
+- Numbered step badges (1, 2, 3...) for clear walkthroughs
+- Watermark text with customizable position, opacity, and social badge prefixes
+
+### 💾 Export & Sharing
+- **Instant Clipboard Copy:** Copy high-res output directly to clipboard in one keystroke (`Ctrl+C` / `Cmd+C`).
+- **Native File Dialog:** Save with standard OS file pickers.
+- **Dedicated Folder Mode:** Automatically save sequentially to a designated screenshots directory.
+- **Multi-Format:** Export to PNG, JPEG, or WebP with configurable scale factors (1x, 2x, 3x) and compression quality.
+- **Auto-Close:** Optional preference to dismiss the editor automatically after copying or saving.
 
 ---
 
-## Landing Page And GitHub Pages
+## Platform Support
 
-The repository ships a static landing page bundle in `landing/`.
-
-- `landing/index.html` is the exported homepage entrypoint.
-- `landing/js/` contains the exported Framer runtime assets used by the page.
-- `.github/workflows/pages.yml` deploys the `landing/` folder to GitHub Pages on pushes to `main`, `master`, or `app-dev`.
-
-To enable deployment in GitHub:
-
-1. Open repository **Settings > Pages**.
-2. Set the source to **GitHub Actions**.
-3. Push to one of the configured branches or run the **Deploy Landing Page** workflow manually.
-
-The workflow publishes the static landing page directly from `landing/`, so it stays separate from the Tauri app build.
+| Platform | Compositor / OS Version | Capture Engine | Package Formats |
+| :--- | :--- | :--- | :--- |
+| **Linux** | Wayland (`hyprland`, `sway`, `niri`, `wlroots`, `gnome`, `kde`) & X11 | `grim` + `slurp` / XDG Desktop Portal (`ashpd`) / X11 fallback; clipboard via `wl-copy` & `xclip` | `.AppImage`, `.deb`, `.rpm`, `.tar.gz` |
+| **macOS** | macOS 12+ (Apple Silicon & Intel x86_64) | Native CoreGraphics / ScreenCaptureKit | `.dmg`, `.app` |
+| **Windows** | Windows 10 & 11 (64-bit) | Windows Graphics Capture / Win32 API | `.exe` (NSIS Installer) |
 
 ---
 
-## Build from source
+## Installation
+
+### Prebuilt Binaries
+Download the latest prebuilt binaries for your operating system from the **[Releases Page](https://github.com/Lalitmukesh69/shotify/releases/latest)**.
+
+#### Linux
+```bash
+# AppImage (Make executable and run)
+chmod +x shotify_*.AppImage
+./shotify_*.AppImage
+
+# Debian / Ubuntu (.deb)
+sudo dpkg -i shotify_*_amd64.deb
+
+# Fedora / RHEL (.rpm)
+sudo rpm -i shotify-*.x86_64.rpm
+```
+
+*Note for Wayland users:* Ensure `grim` and `wl-clipboard` are installed on your distribution for optimal capture performance (`sudo apt install grim wl-clipboard` or `sudo dnf install grim wl-clipboard`).
+
+#### macOS
+Download the `.dmg` installer, open it, and drag **shotify** to your Applications folder.  
+*First launch note:* If macOS warns that the app cannot be opened because it is from an unidentified developer, right-click the app in Finder and choose **Open**, or run:
+```bash
+xattr -rd com.apple.quarantine /Applications/shotify.app
+```
+
+#### Windows
+Download `shotify_*_x64-setup.exe` and follow the setup wizard.
+
+---
+
+## Building from Source
+
+### Prerequisites
+1. **Node.js** (v18 or higher) and `npm`
+2. **Rust** toolchain (v1.75+): Install via [rustup.rs](https://rustup.rs/)
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+3. **OS-specific dependencies**:
+   - **Debian / Ubuntu**:
+     ```bash
+     sudo apt update && sudo apt install -y \
+       build-essential \
+       curl \
+       wget \
+       file \
+       libssl-dev \
+       libgtk-3-dev \
+       libwebkit2gtk-4.1-dev \
+       libayatana-appindicator3-dev \
+       librsvg2-dev \
+       grim \
+       slurp \
+       wl-clipboard
+     ```
+   - **Fedora**:
+     ```bash
+     sudo dnf install -y \
+       webkit2gtk4.1-devel \
+       openssl-devel \
+       curl \
+       wget \
+       file \
+       libappindicator-gtk3-devel \
+       librsvg2-devel \
+       grim \
+       slurp \
+       wl-clipboard
+     ```
+   - **macOS**: Xcode Command Line Tools (`xcode-select --install`).
+   - **Windows**: Microsoft Visual Studio C++ Build Tools and WebView2.
+
+### Build Steps
 
 ```bash
-git clone <your-repo-url> shotstyle
-cd shotstyle
+# 1. Clone the repository
+git clone https://github.com/Lalitmukesh69/shotify.git
+cd shotify
+
+# 2. Install frontend dependencies
 npm install
-npm run tauri:dev
-```
 
-For a production web bundle used by the desktop app:
+# 3. Run in development mode (hot-reloads UI and native Tauri shell)
+npm run dev
 
-```bash
-npm run build
-```
+# 4. Run automated test suite
+npm test
 
-For a packaged desktop build:
-
-```bash
+# 5. Build production packages
 npm run tauri:build
 ```
 
+The compiled binaries will be placed in `src-tauri/target/release/bundle/`.
+
 ---
 
-## macOS: "App cannot be opened"
+## Landing Page & Website
 
-Locally built desktop apps may be quarantined by macOS.
+The official product landing page is located in [`landing/`](./landing/) and is hosted on GitHub Pages:
 
-Remove the quarantine flag with:
+👉 **[https://lalitmukesh69.github.io/shotify/](https://lalitmukesh69.github.io/shotify/)**
 
+To run the landing page locally:
 ```bash
-xattr -rd com.apple.quarantine /Applications/shot.style.app
+python3 -m http.server 4173 --directory landing
+```
+Then navigate to `http://localhost:4173`.
+
+Deployment to GitHub Pages is handled automatically on pushes to `main` via the [Deploy Landing Page](./.github/workflows/pages.yml) workflow.
+
+---
+
+## Project Structure
+
+```text
+shotify/
+├── components/          # Shared React UI components & dialogs
+├── docs/media/          # Screenshots, demo GIFs, and presentation assets
+├── landing/             # Static website hosted on GitHub Pages
+│   ├── index.html       # Official product landing page
+│   ├── images/          # Web assets and icons
+│   └── legal-pages/     # Privacy policy and terms
+├── platform/            # Platform-specific build helpers (Linux/macOS/Windows)
+├── src-tauri/           # Native Rust backend (Tauri v2)
+│   ├── src/             # Screenshot pipeline, clipboard, shortcuts, platform hooks
+│   ├── capabilities/    # Tauri permission configurations
+│   ├── icons/           # High-resolution application icons
+│   └── Cargo.toml       # Rust crate dependencies
+├── tests/               # Vitest unit and integration test suite
+├── ui/                  # Frontend canvas and editor application
+├── .github/workflows/   # CI, GitHub Pages, and multi-platform release workflows
+└── package.json         # Scripts and project metadata
 ```
 
 ---
 
-# System Requirements
+## Contributing
 
-| Platform | Minimum version | Notes |
-| --- | --- | --- |
-| **macOS** | Recent supported macOS release | Native screenshot permissions must be granted for capture workflows. |
-| **Windows** | Recent supported Windows release | Native dialogs and screenshot behavior depend on desktop permissions and OS policy. |
+Contributions, bug reports, and suggestions are welcome!
 
-> [!IMPORTANT]
-> Desktop screenshot capture and export depend on OS permissions, local filesystem access, and Tauri-native integrations. Test the full capture and export flow on both shipping targets before calling a release stable.
-
----
-
-# Usage
-
-## Capture
-
-1. Launch shot.style.
-2. Capture a screenshot or upload an image.
-3. Wait for the image to open in the editor.
-
-## Edit
-
-Inside the editor you can:
-
-- choose gradients, wallpapers, colors, or blob backgrounds
-- add padding, inset, rounded corners, borders, and shadows
-- use browser bars or mockups for presentation framing
-- annotate the screenshot with pen or shape tools
-- add watermark text and tweak export styling
-
-## Export
-
-Export options include:
-
-- **Save** through the desktop file dialog
-- **Save to folder** for a repeatable output folder workflow
-- **Copy output** for clipboard-based sharing
-
-You can adjust output format, export quality, and scale before export.
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Run tests before committing (`npm test`)
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
 ---
 
-# Limitations
+## License
 
-### Screenshot permissions
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)** — see the [LICENSE](./LICENSE) file for details.
 
-Desktop capture depends on OS-level permissions. If capture is unavailable, verify that the app has the required screen recording or screenshot permissions.
-
-### Export correctness with local assets
-
-shot.style supports local wallpapers and native asset URLs, but desktop export pipelines still need extra normalization work for some WebView environments. This is handled in-app, though very large local assets may make export slightly slower.
-
-### Platform differences
-
-Clipboard behavior, save dialogs, and native screenshot helpers differ between macOS and Windows. Validate both independently before treating them as equivalent.
-
----
-
-# How It Works
-
-shot.style combines a desktop shell, a shared renderer, and a native-backed export pipeline.
-
-**Desktop shell**
-- Tauri provides the desktop app runtime, window management, dialogs, and native command bridge.
-
-**UI**
-- The active frontend lives in `ui/` and is built with React.
-
-**Rendering**
-- Shared editor and rendering logic lives in `components/` and `utils/`.
-- Preview and export intentionally share the same styling decisions so exported output matches what users see.
-
-**Native integration**
-- Rust commands in `src-tauri/` handle desktop-native file, screenshot, and image operations.
-
-**Export**
-- The export pipeline normalizes image sources, handles canvas-backed rendering, and produces PNG, JPEG, or WebP output for save and clipboard flows.
-
----
-
-# Contribution
-
-Contributions are accepted.
-
-Please keep pull requests focused, validate capture/edit/export flows, and avoid unrelated refactors.
-
-See `CONTRIBUTING.md` for guidelines.
-
----
-
-# Community
-
-Bug reports and feature requests belong in the repository issue tracker.
-
-Pull requests are welcome.
-
----
-
-# License
-
-`shotify` is licensed under the **GNU General Public License v3.0 (GPL-3.0)** — see [LICENSE](./LICENSE).
-
-Upstream portions derived from [shot.style](https://github.com/webadderall/shot) are Copyright (c) 2026 shot.style and retain their original MIT notice in [NOTICE](./NOTICE).
-
----
-
-# Credits
-
-Originally created by webadderall ([shot.style](https://github.com/webadderall/shot)).
-
----
+Portions derived from upstream [shot.style](https://github.com/webadderall/shot) are Copyright (c) 2026 shot.style and retain their original notice in [NOTICE](./NOTICE).

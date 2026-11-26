@@ -125,7 +125,7 @@ export default function LeftSidebar() {
       ref={sidebarScrollRef}
       data-shotstyle-scroll="sidebar"
       data-scrolling={sidebarIsScrolling ? '1' : '0'}
-      className={`absolute left-4 top-4 w-[270px] max-h-[calc(100vh-32px)] rounded-[16px] pb-[24px] px-[20px] text-white flex flex-col shadow-[inset_0_0_0_1px_#1b1f23,0_4px_4px_rgba(0,0,0,0.25)] overflow-y-auto overflow-x-visible select-none window-no-drag shotstyle-chrome-panel shotstyle-sidebar-scroll shotstyle-sidebar ${sidebarIsScrolling ? 'is-scrolling' : ''}`}
+      className={`absolute left-4 top-4 w-[270px] max-h-[calc(100%-32px)] rounded-[16px] pb-[24px] px-[20px] text-white flex flex-col shadow-[inset_0_0_0_1px_#1b1f23,0_4px_4px_rgba(0,0,0,0.25)] overflow-y-auto overflow-x-visible select-none window-no-drag shotstyle-chrome-panel shotstyle-sidebar-scroll shotstyle-sidebar ${sidebarIsScrolling ? 'is-scrolling' : ''}`}
       style={{ paddingTop: topPaddingPx }}
     >
       <input

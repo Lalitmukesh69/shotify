@@ -47,6 +47,9 @@ jobs:
           - platform: windows-latest
             args: ''
             rustTargets: ''
+          - platform: ubuntu-22.04
+            args: '--bundles appimage,deb,rpm'
+            rustTargets: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -80,6 +83,20 @@ jobs:
           workspaces: |
             src-tauri -> target
 
+      - name: Install Linux Tauri build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm \
+            fuse \
+            libfuse2
+
       - name: Resolve release metadata
         id: release_meta
         shell: bash
@@ -102,7 +119,7 @@ jobs:
           fi
 
           if [[ -z "$release_name" ]]; then
-            release_name="Shot ${tag_name}"
+            release_name="shotify ${tag_name}"
           fi
 
           echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
@@ -160,7 +177,7 @@ jobs:
           projectPath: .
           tagName: ${{ steps.release_meta.outputs.tag_name }}
           releaseName: ${{ steps.release_meta.outputs.release_name }}
-          releaseBody: Desktop installers and updater artifacts for Shot.
+          releaseBody: Desktop installers and updater artifacts for shotify.
           releaseCommitish: ${{ github.sha }}
           releaseDraft: ${{ steps.release_meta.outputs.draft_value }}
           prerelease: ${{ steps.release_meta.outputs.prerelease_value }}
@@ -169,4 +186,4 @@ jobs:
           args: ${{ steps.build_options.outputs.resolved_args }}
           uploadPlainBinary: false
           updaterJsonPreferNsis: true
-          assetNamePattern: 'Shot_[platform]_[arch][ext]'
+          assetNamePattern: 'shotify_[platform]_[arch][ext]'
