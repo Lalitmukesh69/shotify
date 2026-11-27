@@ -854,13 +854,16 @@
                 <p style="max-width:30em">Capture, frame, annotate and export in one calm place. No more passing a
                     single image through three different apps.</p>
                 <div class="actions"><a class="btn primary" data-download-platform="macos"
-                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/download/v1.0.0/shotify_darwin_x64.dmg"
+                        download="shotify_darwin_x64.dmg"
                         title="Download shotify for macOS (.dmg)">Download for macOS</a><a class="btn"
                         data-download-platform="windows"
-                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/download/v1.0.0/shotify_windows_x64.exe"
+                        download="shotify_windows_x64.exe"
                         title="Download shotify for Windows (.exe)">Download for Windows</a><a class="btn"
                         data-download-platform="linux"
-                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/download/v1.0.0/shotify_linux_amd64.AppImage"
+                        download="shotify_linux_amd64.AppImage"
                         title="Download shotify for Linux (.AppImage)">Download for Linux</a>
                 </div>
             </div>
@@ -1043,13 +1046,16 @@
                 <h2>Make your next screenshot feel considered.</h2>
                 <p>Download shotify and take the first one in under a minute.</p>
                 <div class="actions"><a class="btn primary" data-download-platform="macos"
-                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/download/v1.0.0/shotify_darwin_x64.dmg"
+                        download="shotify_darwin_x64.dmg"
                         title="Download shotify for macOS (.dmg)">Download for macOS</a><a class="btn"
                         data-download-platform="windows"
-                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/download/v1.0.0/shotify_windows_x64.exe"
+                        download="shotify_windows_x64.exe"
                         title="Download shotify for Windows (.exe)">Download for Windows</a><a class="btn"
                         data-download-platform="linux"
-                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/download/v1.0.0/shotify_linux_amd64.AppImage"
+                        download="shotify_linux_amd64.AppImage"
                         title="Download shotify for Linux (.AppImage)">Download for Linux</a>
                 </div>
                 <a href="#story" style="font-size:15px">Read the source on GitHub</a>
@@ -1132,7 +1138,11 @@
                 ]
             };
 
-            var resolvedUrls = {};
+            var resolvedUrls = {
+                windows: 'https://github.com/' + GITHUB_REPO + '/releases/download/v1.0.0/shotify_windows_x64.exe',
+                macos: 'https://github.com/' + GITHUB_REPO + '/releases/download/v1.0.0/shotify_darwin_x64.dmg',
+                linux: 'https://github.com/' + GITHUB_REPO + '/releases/download/v1.0.0/shotify_linux_amd64.AppImage'
+            };
             var fetchPromise = null;
 
             function resolveAssets() {
