@@ -1,0 +1,17 @@
+[package]
+name = "shotify-annotate"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Vector annotation engine, freehand stroke outliner, and Tiny-Skia rasterizer for Shotify"
+
+[dependencies]
+ab_glyph = { workspace = true }
+image = { workspace = true }
+kurbo = { workspace = true }
+serde = { workspace = true }
+shotify-core = { path = "../shotify-core" }
+thiserror = { workspace = true }
+tiny-skia = { workspace = true }
