@@ -16,6 +16,7 @@ build-resources/
 build-temp/
 
 # Tauri/Rust build outputs
+/target/
 src-tauri/target/
 src-tauri/.tauri/
 
