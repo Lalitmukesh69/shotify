@@ -1,0 +1,50 @@
+[package]
+name = "shotify-app"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Native cross-platform Iced GUI application for Shotify (Rust edition)"
+
+[[bin]]
+name = "shotify-rust"
+path = "src/main.rs"
+
+[dependencies]
+arboard.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+global-hotkey.workspace = true
+iced.workspace = true
+image.workspace = true
+kurbo.workspace = true
+raw-window-handle.workspace = true
+reqwest.workspace = true
+rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shotify-annotate = { path = "../shotify-annotate" }
+shotify-core = { path = "../shotify-core" }
+shotify-export = { path = "../shotify-export" }
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tray-icon.workspace = true
+uuid.workspace = true
+xcap.workspace = true
+
+[target."cfg(target_os = \"linux\")".dependencies]
+arboard = { workspace = true, features = ["wayland-data-control"] }
+ashpd.workspace = true
+futures-util.workspace = true
+glib.workspace = true
+gtk.workspace = true
+
+[target."cfg(any(target_os = \"macos\", target_os = \"windows\"))".dependencies]
+window-vibrancy.workspace = true
+
+[target."cfg(target_os = \"macos\")".dependencies]
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true

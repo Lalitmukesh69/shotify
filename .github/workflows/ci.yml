@@ -39,6 +39,6 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: |
-            src-tauri -> target
+            . -> target
       - name: Run Rust unit tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --workspace

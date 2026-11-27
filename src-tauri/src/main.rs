@@ -43,7 +43,13 @@ use images::{
   backgrounds_save_custom,
   clipboard_read_image_data_url,
   clipboard_write_image_data_url,
+  core_compose_preview,
+  core_detect_balance_crop,
+  core_extract_palette,
+  core_generate_algorithm_gradients,
   exports_apply_watermark,
+  exports_render_and_save,
+  exports_render_to_clipboard,
   exports_save_to_downloads,
   exports_save_to_path,
   exports_save_to_folder,
@@ -257,13 +263,14 @@ struct ShadowPreset {
 
 #[tauri::command]
 fn ui_shadow_hug_preset() -> ShadowPreset {
+  let hug = shotify_core::ShadowParams::hug_preset();
   ShadowPreset {
-    offset_x: 0.0,
-    offset_y: 10.0,
-    blur: 30.0,
-    spread: 0.0,
-    color: "#000000".to_string(),
-    opacity: 0.5,
+    offset_x: hug.offset_x,
+    offset_y: hug.offset_y,
+    blur: hug.blur,
+    spread: hug.spread,
+    color: hug.color,
+    opacity: hug.opacity,
   }
 }
 
@@ -437,6 +444,8 @@ fn main() {
       exports_save_to_path,
       exports_save_to_folder,
       exports_apply_watermark,
+      exports_render_and_save,
+      exports_render_to_clipboard,
       screenshot_capture_to_file,
       capture_region_upload,
       capture_region_submit_data_url,
@@ -464,6 +473,10 @@ fn main() {
       platform_capabilities,
       annotation_pen_outline_path,
       ui_shadow_hug_preset,
+      core_extract_palette,
+      core_detect_balance_crop,
+      core_generate_algorithm_gradients,
+      core_compose_preview,
     ])
     .setup(|app| {
       app::setup_app(app)?;

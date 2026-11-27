@@ -1,0 +1,30 @@
+[package]
+name = "shotify-export"
+description = "Headless scene-graph rasterization, trimming, watermark compositing, multi-format encoding, file/clipboard export pipeline for shotify"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["lossy-webp"]
+lossy-webp = ["dep:webp"]
+
+[dependencies]
+arboard.workspace = true
+base64.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shotify-annotate = { path = "../shotify-annotate" }
+shotify-core = { path = "../shotify-core" }
+thiserror.workspace = true
+tiny-skia.workspace = true
+tracing.workspace = true
+webp = { workspace = true, optional = true }
+
+[target."cfg(target_os = \"linux\")".dependencies]
+arboard = { workspace = true, features = ["wayland-data-control"] }

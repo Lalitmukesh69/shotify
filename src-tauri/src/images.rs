@@ -1,7 +1,6 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::collections::HashSet;
 
 #[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
@@ -9,6 +8,18 @@ use std::process::{Command, Stdio};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use shotify_core::{
+  collect_images_recursive, default_os_wallpaper_roots, detect_balanced_crop_rect,
+  extract_palette_from_rgba_image, generate_algorithm_gradients, is_wallpaper_image,
+  list_system_wallpapers_from_paths, compose_screenshot_scene, BalanceDetectionResult,
+  BalanceOptions, EditorOptions, ExtractedPalette, GradientPreset, RenderQuality,
+  SystemWallpaperItem,
+};
+use shotify_export::{
+  bytes_to_data_url, composite_watermark_rgba, decode_data_url as decode_raw_data_url,
+  encode_rgba_image, execute_export, save_bytes_to_folder, save_bytes_to_path, EncodeOptions,
+  ExportDestination, ExportFormat, ExportRequest, RasterizeOptions,
+};
 use tauri::Manager;
 use uuid::Uuid;
 
@@ -158,27 +169,6 @@ fn app_custom_backgrounds_dir(app: &tauri::AppHandle) -> Result<PathBuf, String>
   Ok(base.join("shotify").join("backgrounds"))
 }
 
-fn sanitize_file_stem(name: &str) -> String {
-  let trimmed = name.trim();
-  if trimmed.is_empty() {
-    return "shotify".to_string();
-  }
-  let cleaned = trimmed
-    .replace(['/', '\\'], "-")
-    .replace(':', "")
-    .replace('*', "")
-    .replace('?', "")
-    .replace('"', "")
-    .replace('<', "")
-    .replace('>', "")
-    .replace('|', "");
-  if cleaned.trim().is_empty() {
-    "shotify".to_string()
-  } else {
-    cleaned
-  }
-}
-
 fn ensure_within_base(base: &Path, target: &Path) -> Result<(), String> {
   let base_abs = base.canonicalize().map_err(|e| format!("Failed to resolve base: {e}"))?;
   let target_abs = target.canonicalize().map_err(|e| format!("Failed to resolve target: {e}"))?;
@@ -186,17 +176,6 @@ fn ensure_within_base(base: &Path, target: &Path) -> Result<(), String> {
     return Err("Refusing to delete outside of managed directory".to_string());
   }
   Ok(())
-}
-
-fn ext_from_mime(mime: &str) -> &'static str {
-  let m = mime.to_lowercase();
-  if m.contains("jpeg") || m.contains("jpg") {
-    "jpg"
-  } else if m.contains("webp") {
-    "webp"
-  } else {
-    "png"
-  }
 }
 
 pub(crate) fn write_temp_png(bytes: &[u8]) -> Result<PathBuf, String> {
@@ -250,52 +229,11 @@ fn apply_brightness_in_place(img: &mut image::RgbaImage, brightness: f32) {
 }
 
 fn decode_data_url(data_url: &str) -> Result<(String, Vec<u8>), String> {
-  let s = data_url.trim();
-  let comma = s.find(',').ok_or_else(|| "Invalid data URL".to_string())?;
-  let (meta, payload) = s.split_at(comma);
-  let payload = &payload[1..];
-
-  let mime = meta
-    .strip_prefix("data:")
-    .and_then(|m| m.split(';').next())
-    .unwrap_or("application/octet-stream")
-    .to_string();
-
-  let bytes = if meta.contains(";base64") {
-    STANDARD
-      .decode(payload)
-      .map_err(|e| format!("Failed to decode base64 data URL: {e}"))?
-  } else {
-    payload.as_bytes().to_vec()
-  };
-
-  Ok((mime, bytes))
+  decode_raw_data_url(data_url).map_err(|e| e.to_string())
 }
 
-fn bytes_to_data_url(mime: &str, bytes: &[u8]) -> String {
-  let b64 = STANDARD.encode(bytes);
-  format!("data:{mime};base64,{b64}")
-}
-
-fn ensure_unique_path(path: PathBuf) -> PathBuf {
-  if !path.exists() {
-    return path;
-  }
-  let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
-  let stem = path
-    .file_stem()
-    .and_then(|s| s.to_str())
-    .unwrap_or("export")
-    .to_string();
-  let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_string();
-
-  let ts = chrono::Utc::now().timestamp_millis();
-  let file_name = if ext.is_empty() {
-    format!("{stem}-{ts}")
-  } else {
-    format!("{stem}-{ts}.{ext}")
-  };
-  parent.join(file_name)
+fn decode_data_url_str(data_url: &str) -> Result<(String, Vec<u8>), String> {
+  decode_data_url(data_url)
 }
 
 fn read_image_bytes_with_retry(path: &Path, max_attempts: u32, delay_ms: u64) -> Result<Vec<u8>, String> {
@@ -1027,183 +965,13 @@ pub struct ListSystemWallpapersArgs {
   pub max_items: Option<u32>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SystemWallpaperItem {
-  pub name: String,
-  pub file_path: String,
-}
-
-fn is_wallpaper_image(path: &Path) -> bool {
-  let ext = path
-    .extension()
-    .and_then(|s| s.to_str())
-    .unwrap_or("")
-    .to_lowercase();
-  let fname = path
-    .file_name()
-    .and_then(|s| s.to_str())
-    .unwrap_or("")
-    .to_lowercase();
-  let path_str = path.to_string_lossy().to_lowercase();
-
-  #[cfg(target_os = "windows")]
-  {
-    // Windows keeps the currently applied wallpaper in extensionless files
-    // such as "TranscodedWallpaper" under the user's Themes folder.
-    let windows_special = fname == "transcodedwallpaper"
-      || fname.starts_with("transcoded_")
-      || fname.starts_with("cachedimage_");
-    if windows_special {
-      return true;
-    }
-  }
-
-  // Allow macOS' built-in thumbnail directory (fast UI previews).
-  let in_macos_thumbnails = path
-    .components()
-    .any(|c| c.as_os_str().to_string_lossy().to_lowercase() == ".thumbnails");
-
-  // Allow common image formats.
-  // macOS dynamic wallpapers can be videos (e.g. .mov); we include those on macOS only.
-  let valid_ext = {
-    #[cfg(target_os = "macos")]
-    {
-      matches!(
-        ext.as_str(),
-        "jpg" | "jpeg" | "png" | "webp" | "bmp" | "heic" | "heif" | "avif" | "mov" | "mp4" | "m4v"
-      )
-    }
-    #[cfg(target_os = "linux")]
-    {
-      matches!(
-        ext.as_str(),
-        "jpg" | "jpeg" | "png" | "webp" | "bmp" | "heic" | "heif" | "avif" | "svg"
-      )
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
-    {
-      matches!(
-        ext.as_str(),
-        "jpg" | "jpeg" | "png" | "webp" | "bmp" | "heic" | "heif" | "avif"
-      )
-    }
-  };
-  // Exclude explicit thumbnail files, but do NOT exclude macOS' .thumbnails directory.
-  let is_thumb = (fname.contains("thumb") || fname.contains("thumbnail") || path_str.contains("/thumb")) && !in_macos_thumbnails;
-
-  valid_ext && !is_thumb
-}
-
-fn collect_images_recursive(root: &Path, out: &mut Vec<PathBuf>, max: usize) {
-  if out.len() >= max {
-    return;
-  }
-  if !root.exists() {
-    return;
-  }
-
-  // Safety/perf: prevent runaway traversal.
-  let max_depth: u8 = 10;
-  let max_dirs: usize = 2_500;
-  let mut visited_dirs: usize = 0;
-
-  let mut stack: Vec<(PathBuf, u8)> = vec![(root.to_path_buf(), 0)];
-  while let Some((dir, depth)) = stack.pop() {
-    if out.len() >= max {
-      break;
-    }
-    if visited_dirs >= max_dirs {
-      break;
-    }
-    visited_dirs += 1;
-
-    let entries = match std::fs::read_dir(&dir) {
-      Ok(v) => v,
-      Err(_) => continue,
-    };
-    for entry in entries.flatten() {
-      if out.len() >= max {
-        break;
-      }
-      let path = entry.path();
-
-      // Skip symlinks to avoid cycles and accidental escapes.
-      let ftype = match entry.file_type() {
-        Ok(t) => t,
-        Err(_) => continue,
-      };
-      if ftype.is_symlink() {
-        continue;
-      }
-
-      if ftype.is_dir() {
-        #[cfg(target_os = "macos")]
-        {
-          // Do not treat macOS internal wallpaper stores as generic subfolders when scanning
-          // the visible Desktop Pictures root. We explicitly scan .wallpapers separately, and
-          // .thumbnails are only for previews (not actual selectable assets).
-          let dir_name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-          if dir_name == ".thumbnails" || dir_name == ".wallpapers" {
-            continue;
-          }
-        }
-        if depth < max_depth {
-          stack.push((path, depth + 1));
-        }
-        continue;
-      }
-
-      if ftype.is_file() && is_wallpaper_image(&path) {
-        out.push(path);
-      }
-    }
-  }
-}
-
 #[tauri::command]
 pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Vec<SystemWallpaperItem>, String> {
-  let max = args.max_items.unwrap_or(300).clamp(1, 500) as usize;
-
-  let mut roots: Vec<PathBuf> = vec![];
-
-  #[cfg(target_os = "macos")]
-  {
-    // Modern macOS stores the actual assets under hidden subfolders.
-    // - .wallpapers: full assets (often .heic/.png and also .mov for dynamic wallpapers)
-    // - .thumbnails: small HEIC previews (fast to decode and good for UI)
-    // Keep the root as a fallback for any directly-present images.
-    // We intentionally only scan system wallpaper roots here (not user Pictures/library paths).
-    roots.push(PathBuf::from("/System/Library/Desktop Pictures/.wallpapers"));
-    roots.push(PathBuf::from("/System/Library/Desktop Pictures/.thumbnails"));
-    roots.push(PathBuf::from("/System/Library/Desktop Pictures"));
-    // Older macOS versions may use this location.
-    roots.push(PathBuf::from("/Library/Desktop Pictures"));
-  }
+  let max = args.max_items.unwrap_or(300).clamp(1, 500);
+  let mut roots = default_os_wallpaper_roots();
 
   #[cfg(target_os = "windows")]
   {
-    roots.push(PathBuf::from(r"C:\Windows\Web\Wallpaper"));
-    roots.push(PathBuf::from(r"C:\Windows\Web\Screen"));
-    roots.push(PathBuf::from(r"C:\Windows\Web\4K\Wallpaper"));
-
-    // User theme wallpaper locations.
-    // Commonly contains TranscodedWallpaper / CachedFiles and user-selected images.
-    if let Ok(appdata) = std::env::var("APPDATA") {
-      let p = PathBuf::from(appdata).join("Microsoft").join("Windows").join("Themes");
-      roots.push(p);
-    }
-    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-      let p = PathBuf::from(localappdata).join("Microsoft").join("Windows").join("Themes");
-      roots.push(p);
-    }
-
-    // Also include the currently configured wallpaper path from registry when available.
-    // This catches custom/user-selected wallpapers outside the standard folders.
     if let Ok(output) = std::process::Command::new("reg")
       .args([
         "query",
@@ -1219,7 +987,6 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
           if !line.to_lowercase().contains("wallpaper") {
             continue;
           }
-          // Typical format: <name>    REG_SZ    <value>
           let value = line
             .split("REG_SZ")
             .nth(1)
@@ -1229,8 +996,8 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
             let p = PathBuf::from(value);
             if p.is_file() {
               roots.push(p);
-            } else if p.parent().is_some() {
-              roots.push(p.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
+            } else if let Some(parent) = p.parent() {
+              roots.push(parent.to_path_buf());
             }
           }
         }
@@ -1238,33 +1005,13 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
     }
   }
 
-  #[cfg(target_os = "linux")]
-  let mut direct_linux_paths: Vec<PathBuf> = vec![];
+  let mut direct_paths: Vec<PathBuf> = vec![];
   #[cfg(target_os = "linux")]
   {
-    roots.push(PathBuf::from("/usr/share/backgrounds"));
-    roots.push(PathBuf::from("/usr/share/wallpapers"));
-    roots.push(PathBuf::from("/usr/local/share/backgrounds"));
-    roots.push(PathBuf::from("/usr/local/share/wallpapers"));
-
-    // Per-user wallpaper locations used by common desktop environments.
-    // GNOME: ~/.local/share/backgrounds
-    // KDE:   ~/.local/share/wallpapers
-    if let Ok(home) = std::env::var("HOME") {
-      roots.push(PathBuf::from(&home).join(".local").join("share").join("backgrounds"));
-      roots.push(PathBuf::from(&home).join(".local").join("share").join("wallpapers"));
-    }
-
-    // XDG user data dir override.
-    if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
-      roots.push(PathBuf::from(&xdg_data_home).join("backgrounds"));
-      roots.push(PathBuf::from(&xdg_data_home).join("wallpapers"));
-    }
-
     for extra in crate::platform::linux::detect_extra_wallpaper_paths() {
       if extra.is_file() {
         if is_wallpaper_image(&extra) {
-          direct_linux_paths.push(extra);
+          direct_paths.push(extra);
         }
       } else if extra.is_dir() {
         roots.push(extra);
@@ -1272,64 +1019,94 @@ pub async fn wallpapers_list_system(args: ListSystemWallpapersArgs) -> Result<Ve
     }
   }
 
-  let mut paths: Vec<PathBuf> = vec![];
-  let mut seen: HashSet<String> = HashSet::new();
+  Ok(list_system_wallpapers_from_paths(&roots, &direct_paths, max))
+}
 
-  for r in roots {
-    let before = paths.len();
-    collect_images_recursive(&r, &mut paths, max);
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreExtractPaletteArgs {
+  pub data_url: String,
+  pub color_count: Option<usize>,
+}
 
-    // De-dupe by normalized string path (best-effort, avoids repeats when roots overlap).
-    // Note: keep ordering stable by removing duplicates after each root scan.
-    if paths.len() != before {
-      let mut deduped: Vec<PathBuf> = Vec::with_capacity(paths.len());
-      for p in paths.drain(..) {
-        let key = p.to_string_lossy().to_lowercase();
-        if seen.insert(key) {
-          deduped.push(p);
-        }
-      }
-      paths = deduped;
+#[tauri::command]
+pub async fn core_extract_palette(args: CoreExtractPaletteArgs) -> Result<Option<ExtractedPalette>, String> {
+  let (_mime, bytes) = decode_data_url(&args.data_url)?;
+  let img = image::load_from_memory(&bytes)
+    .map_err(|e| format!("Failed to decode image: {e}"))?
+    .to_rgba8();
+  Ok(extract_palette_from_rgba_image(&img, args.color_count.unwrap_or(5)))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreDetectBalanceArgs {
+  pub data_url: String,
+}
+
+#[tauri::command]
+pub async fn core_detect_balance_crop(args: CoreDetectBalanceArgs) -> Result<BalanceDetectionResult, String> {
+  let (_mime, bytes) = decode_data_url(&args.data_url)?;
+  let img = image::load_from_memory(&bytes)
+    .map_err(|e| format!("Failed to decode image: {e}"))?
+    .to_rgba8();
+  Ok(detect_balanced_crop_rect(&img, &BalanceOptions::default()))
+}
+
+#[tauri::command]
+pub async fn core_generate_algorithm_gradients() -> Result<Vec<GradientPreset>, String> {
+  Ok(generate_algorithm_gradients())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreComposePreviewArgs {
+  pub data_url: String,
+  pub wallpaper_data_url: Option<String>,
+  pub options: Option<EditorOptions>,
+  pub target_width: Option<u32>,
+  pub scale: Option<f64>,
+}
+
+#[tauri::command]
+pub async fn core_compose_preview(args: CoreComposePreviewArgs) -> Result<String, String> {
+  let (_mime, bytes) = decode_data_url(&args.data_url)?;
+  let screenshot = image::load_from_memory(&bytes)
+    .map_err(|e| format!("Failed to decode screenshot image: {e}"))?
+    .to_rgba8();
+
+  let wallpaper_img = match args.wallpaper_data_url.as_deref() {
+    Some(url) if !url.trim().is_empty() => {
+      let (_wm, wbytes) = decode_data_url(url)?;
+      Some(
+        image::load_from_memory(&wbytes)
+          .map_err(|e| format!("Failed to decode wallpaper image: {e}"))?
+          .to_rgba8(),
+      )
     }
+    _ => None,
+  };
 
-    if paths.len() >= max {
-      break;
-    }
-  }
+  let opts = args.options.unwrap_or_default();
+  let width = args.target_width.unwrap_or(1000).clamp(64, 4096);
+  let scale = args.scale.unwrap_or(1.0).clamp(0.25, 4.0);
 
-  #[cfg(target_os = "linux")]
-  {
-    for p in direct_linux_paths {
-      if paths.len() >= max {
-        break;
-      }
-      let key = p.to_string_lossy().to_lowercase();
-      if seen.insert(key) {
-        paths.push(p);
-      }
-    }
-  }
+  let out = compose_screenshot_scene(
+    &screenshot,
+    wallpaper_img.as_ref(),
+    &opts,
+    width,
+    scale,
+    RenderQuality::Final,
+  )
+  .map_err(|e| format!("Composition failed: {e}"))?;
 
-  // Stable sort by filename for deterministic UI.
-  paths.sort_by(|a, b| {
-    let an = a.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-    let bn = b.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-    an.cmp(&bn)
-  });
+  let mut encoded = Vec::new();
+  image::DynamicImage::ImageRgba8(out.image)
+    .write_to(&mut Cursor::new(&mut encoded), image::ImageFormat::Png)
+    .map_err(|e| format!("Failed to encode composed PNG: {e}"))?;
 
-  let mut out: Vec<SystemWallpaperItem> = vec![];
-  for p in paths.into_iter().take(max) {
-    let name = p
-      .file_name()
-      .and_then(|s| s.to_str())
-      .unwrap_or("Wallpaper")
-      .to_string();
-    out.push(SystemWallpaperItem {
-      name,
-      file_path: p.to_string_lossy().to_string(),
-    });
-  }
-  Ok(out)
+  Ok(bytes_to_data_url("image/png", &encoded))
 }
 
 #[cfg(test)]
@@ -1398,7 +1175,7 @@ mod system_wallpapers_tests {
 
 #[tauri::command]
 pub async fn exports_save_to_downloads(app: tauri::AppHandle, args: SaveExportArgs) -> Result<SaveExportResult, String> {
-  let (mime, bytes) = match decode_data_url(&args.data_url) {
+  let (mime, bytes) = match decode_data_url_str(&args.data_url) {
     Ok(v) => v,
     Err(e) => {
       return Ok(SaveExportResult { ok: false, file_path: None, error: Some(e) })
@@ -1425,112 +1202,70 @@ pub async fn exports_save_to_downloads(app: tauri::AppHandle, args: SaveExportAr
     .map_err(|e| format!("Failed to resolve output directory: {e}"))?;
 
   let out_dir = base_dir.join("shotify");
-  fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create export dir: {e}"))?;
-
-  let raw_name = sanitize_file_stem(&args.file_name);
-  let requested_path = Path::new(&raw_name);
-  let stem = requested_path
-    .file_stem()
-    .and_then(|s| s.to_str())
-    .unwrap_or("shotify")
-    .to_string();
-
-  let ext = requested_path
-    .extension()
-    .and_then(|s| s.to_str())
-    .map(|s| s.to_lowercase())
-    .filter(|s| s == "png" || s == "jpg" || s == "jpeg" || s == "webp")
-    .unwrap_or_else(|| ext_from_mime(&mime).to_string());
-
-  let file_name = if ext == "jpeg" { format!("{stem}.jpg") } else { format!("{stem}.{ext}") };
-  let out_path = ensure_unique_path(out_dir.join(file_name));
-
-  match fs::write(&out_path, bytes) {
-    Ok(_) => Ok(SaveExportResult { ok: true, file_path: Some(out_path.to_string_lossy().to_string()), error: None }),
-    Err(e) => Ok(SaveExportResult { ok: false, file_path: None, error: Some(format!("Failed to write file: {e}")) }),
+  match save_bytes_to_folder(&bytes, &mime, &out_dir, &args.file_name) {
+    Ok(out_path) => Ok(SaveExportResult {
+      ok: true,
+      file_path: Some(out_path.to_string_lossy().to_string()),
+      error: None,
+    }),
+    Err(e) => Ok(SaveExportResult {
+      ok: false,
+      file_path: None,
+      error: Some(e.to_string()),
+    }),
   }
 }
 
 #[tauri::command]
 pub async fn exports_save_to_path(_app: tauri::AppHandle, args: SaveExportToPathArgs) -> Result<SaveExportResult, String> {
-  let (mime, bytes) = match decode_data_url(&args.data_url) {
+  let (mime, bytes) = match decode_data_url_str(&args.data_url) {
     Ok(v) => v,
     Err(e) => {
       return Ok(SaveExportResult { ok: false, file_path: None, error: Some(e) })
     }
   };
 
-  let mut out_path = PathBuf::from(args.file_path);
-
-  // If the dialog returns a path without extension, add one based on the data URL MIME.
-  let missing_ext = out_path
-    .extension()
-    .and_then(|s| s.to_str())
-    .map(|s| s.trim().is_empty())
-    .unwrap_or(true);
-
-  if missing_ext {
-    let ext = ext_from_mime(&mime);
-    let ext = if ext == "jpeg" { "jpg" } else { ext };
-    out_path.set_extension(ext);
-  }
-
-  if let Some(parent) = out_path.parent() {
-    if !parent.as_os_str().is_empty() {
-      fs::create_dir_all(parent).map_err(|e| format!("Failed to create output dir: {e}"))?;
-    }
-  }
-
-  match fs::write(&out_path, bytes) {
-    Ok(_) => Ok(SaveExportResult { ok: true, file_path: Some(out_path.to_string_lossy().to_string()), error: None }),
-    Err(e) => Ok(SaveExportResult { ok: false, file_path: None, error: Some(format!("Failed to write file: {e}")) }),
+  match save_bytes_to_path(&bytes, &mime, Path::new(&args.file_path)) {
+    Ok(out_path) => Ok(SaveExportResult {
+      ok: true,
+      file_path: Some(out_path.to_string_lossy().to_string()),
+      error: None,
+    }),
+    Err(e) => Ok(SaveExportResult {
+      ok: false,
+      file_path: None,
+      error: Some(e.to_string()),
+    }),
   }
 }
 
 #[tauri::command]
 pub async fn exports_save_to_folder(_app: tauri::AppHandle, args: SaveExportToFolderArgs) -> Result<SaveExportResult, String> {
-  let (mime, bytes) = match decode_data_url(&args.data_url) {
+  let (mime, bytes) = match decode_data_url_str(&args.data_url) {
     Ok(v) => v,
     Err(e) => {
       return Ok(SaveExportResult { ok: false, file_path: None, error: Some(e) })
     }
   };
 
-  let folder = PathBuf::from(args.folder_path);
-  if folder.as_os_str().is_empty() {
-    return Ok(SaveExportResult { ok: false, file_path: None, error: Some("Missing folder path".to_string()) });
-  }
-
-  fs::create_dir_all(&folder).map_err(|e| format!("Failed to create output dir: {e}"))?;
-
-  let raw_name = sanitize_file_stem(&args.file_name);
-  let requested_path = Path::new(&raw_name);
-  let stem = requested_path
-    .file_stem()
-    .and_then(|s| s.to_str())
-    .unwrap_or("shotify")
-    .to_string();
-
-  let ext = requested_path
-    .extension()
-    .and_then(|s| s.to_str())
-    .map(|s| s.to_lowercase())
-    .filter(|s| s == "png" || s == "jpg" || s == "jpeg" || s == "webp")
-    .unwrap_or_else(|| ext_from_mime(&mime).to_string());
-
-  let file_name = if ext == "jpeg" { format!("{stem}.jpg") } else { format!("{stem}.{ext}") };
-  let out_path = ensure_unique_path(folder.join(file_name));
-
-  match fs::write(&out_path, bytes) {
-    Ok(_) => Ok(SaveExportResult { ok: true, file_path: Some(out_path.to_string_lossy().to_string()), error: None }),
-    Err(e) => Ok(SaveExportResult { ok: false, file_path: None, error: Some(format!("Failed to write file: {e}")) }),
+  match save_bytes_to_folder(&bytes, &mime, Path::new(&args.folder_path), &args.file_name) {
+    Ok(out_path) => Ok(SaveExportResult {
+      ok: true,
+      file_path: Some(out_path.to_string_lossy().to_string()),
+      error: None,
+    }),
+    Err(e) => Ok(SaveExportResult {
+      ok: false,
+      file_path: None,
+      error: Some(e.to_string()),
+    }),
   }
 }
 
 #[tauri::command]
 pub async fn exports_apply_watermark(_app: tauri::AppHandle, args: ApplyWatermarkArgs) -> Result<String, String> {
-  let (base_mime, base_bytes) = decode_data_url(&args.base_data_url)?;
-  let (_wm_mime, wm_bytes) = decode_data_url(&args.watermark_data_url)?;
+  let (base_mime, base_bytes) = decode_data_url_str(&args.base_data_url)?;
+  let (_wm_mime, wm_bytes) = decode_data_url_str(&args.watermark_data_url)?;
 
   let mut base = image::load_from_memory(&base_bytes)
     .map_err(|e| format!("Failed to decode base image: {e}"))?
@@ -1540,63 +1275,161 @@ pub async fn exports_apply_watermark(_app: tauri::AppHandle, args: ApplyWatermar
     .map_err(|e| format!("Failed to decode watermark image: {e}"))?
     .to_rgba8();
 
-  let (base_w, base_h) = base.dimensions();
-  let (wm_w, wm_h) = watermark.dimensions();
+  composite_watermark_rgba(&mut base, &watermark, args.x, args.y);
 
-  let x0 = args.x.round().max(0.0) as i64;
-  let y0 = args.y.round().max(0.0) as i64;
+  let format = ExportFormat::from_lossy_or_default(&base_mime);
+  let out = encode_rgba_image(&base, format, 0.95).map_err(|e| e.to_string())?;
+  Ok(bytes_to_data_url(format.mime_type(), &out))
+}
 
-  for wy in 0..wm_h {
-    let by = y0 + wy as i64;
-    if by < 0 || by >= base_h as i64 { continue; }
-    for wx in 0..wm_w {
-      let bx = x0 + wx as i64;
-      if bx < 0 || bx >= base_w as i64 { continue; }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderAndExportArgs {
+  pub data_url: String,
+  pub wallpaper_data_url: Option<String>,
+  pub options: Option<EditorOptions>,
+  pub target_width: Option<u32>,
+  pub scale: Option<f64>,
+  pub format: Option<String>,
+  pub quality: Option<f32>,
+  pub file_name: Option<String>,
+  pub folder_path: Option<String>,
+  pub file_path: Option<String>,
+}
 
-      let wm_px = watermark.get_pixel(wx, wy);
-      let wa = wm_px[3] as f32 / 255.0;
-      if wa <= 0.0 { continue; }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderAndExportResult {
+  pub ok: bool,
+  pub data_url: Option<String>,
+  pub file_path: Option<String>,
+  pub width: u32,
+  pub height: u32,
+  pub error: Option<String>,
+}
 
-      let base_px = base.get_pixel_mut(bx as u32, by as u32);
-      let ba = base_px[3] as f32 / 255.0;
+#[tauri::command]
+pub async fn exports_render_and_save(args: RenderAndExportArgs) -> Result<RenderAndExportResult, String> {
+  let (_mime, bytes) = decode_data_url_str(&args.data_url)?;
+  let screenshot = image::load_from_memory(&bytes)
+    .map_err(|e| format!("Failed to decode screenshot image: {e}"))?
+    .to_rgba8();
 
-      let out_a = wa + (ba * (1.0 - wa));
-      if out_a <= 0.0 {
-        base_px.0 = [0, 0, 0, 0];
-        continue;
-      }
-
-      let br = base_px[0] as f32 / 255.0;
-      let bg = base_px[1] as f32 / 255.0;
-      let bb = base_px[2] as f32 / 255.0;
-      let wr = wm_px[0] as f32 / 255.0;
-      let wg = wm_px[1] as f32 / 255.0;
-      let wb = wm_px[2] as f32 / 255.0;
-
-      let out_r = (wr * wa + br * ba * (1.0 - wa)) / out_a;
-      let out_g = (wg * wa + bg * ba * (1.0 - wa)) / out_a;
-      let out_b = (wb * wa + bb * ba * (1.0 - wa)) / out_a;
-
-      base_px[0] = (out_r * 255.0).round().clamp(0.0, 255.0) as u8;
-      base_px[1] = (out_g * 255.0).round().clamp(0.0, 255.0) as u8;
-      base_px[2] = (out_b * 255.0).round().clamp(0.0, 255.0) as u8;
-      base_px[3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
+  let wallpaper = match args.wallpaper_data_url.as_deref() {
+    Some(url) if !url.trim().is_empty() => {
+      let (_wm, wb) = decode_data_url_str(url)?;
+      Some(
+        image::load_from_memory(&wb)
+          .map_err(|e| format!("Failed to decode wallpaper: {e}"))?
+          .to_rgba8(),
+      )
     }
-  }
-
-  let format = if base_mime.to_lowercase().contains("jpeg") || base_mime.to_lowercase().contains("jpg") {
-    image::ImageFormat::Jpeg
-  } else if base_mime.to_lowercase().contains("webp") {
-    image::ImageFormat::WebP
-  } else {
-    image::ImageFormat::Png
+    _ => None,
   };
 
-  let mut out: Vec<u8> = Vec::new();
-  let dyn_img = image::DynamicImage::ImageRgba8(base);
-  dyn_img
-    .write_to(&mut Cursor::new(&mut out), format)
-    .map_err(|e| format!("Failed to encode output image: {e}"))?;
+  let opts = args.options.unwrap_or_default();
+  let format = ExportFormat::from_lossy_or_default(args.format.as_deref().unwrap_or("png"));
+  let quality = args.quality.unwrap_or(0.95);
+  let scale = args.scale.unwrap_or(1.0);
+  let target_width = args.target_width.unwrap_or(1200).clamp(64, 4096);
+  let file_name = args
+    .file_name
+    .unwrap_or_else(|| shotify_export::build_default_export_file_name(format));
 
-  Ok(bytes_to_data_url(&base_mime, &out))
+  let destination = if let Some(fp) = args.file_path.filter(|s| !s.trim().is_empty()) {
+    ExportDestination::Path { file_path: PathBuf::from(fp) }
+  } else if let Some(dir) = args.folder_path.filter(|s| !s.trim().is_empty()) {
+    ExportDestination::Folder { folder_path: PathBuf::from(dir), file_name }
+  } else {
+    ExportDestination::Downloads { file_name }
+  };
+
+  match execute_export(
+    ExportRequest {
+      screenshot: &screenshot,
+      wallpaper: wallpaper.as_ref(),
+      options: &opts,
+      raster: RasterizeOptions {
+        target_width,
+        scale,
+        ..Default::default()
+      },
+      encode: EncodeOptions {
+        format,
+        quality,
+        ..Default::default()
+      },
+      destination,
+    },
+    None,
+  ) {
+    Ok(outcome) => Ok(RenderAndExportResult {
+      ok: true,
+      data_url: Some(outcome.to_data_url()),
+      file_path: outcome.file_path.map(|p| p.to_string_lossy().to_string()),
+      width: outcome.width,
+      height: outcome.height,
+      error: None,
+    }),
+    Err(e) => Ok(RenderAndExportResult {
+      ok: false,
+      data_url: None,
+      file_path: None,
+      width: 0,
+      height: 0,
+      error: Some(e.to_string()),
+    }),
+  }
+}
+
+#[tauri::command]
+pub async fn exports_render_to_clipboard(
+  app: tauri::AppHandle,
+  clipboard_state: tauri::State<'_, ClipboardState>,
+  args: RenderAndExportArgs,
+) -> Result<(), String> {
+  let (_mime, bytes) = decode_data_url_str(&args.data_url)?;
+  let screenshot = image::load_from_memory(&bytes)
+    .map_err(|e| format!("Failed to decode screenshot image: {e}"))?
+    .to_rgba8();
+
+  let wallpaper = match args.wallpaper_data_url.as_deref() {
+    Some(url) if !url.trim().is_empty() => {
+      let (_wm, wb) = decode_data_url_str(url)?;
+      Some(
+        image::load_from_memory(&wb)
+          .map_err(|e| format!("Failed to decode wallpaper: {e}"))?
+          .to_rgba8(),
+      )
+    }
+    _ => None,
+  };
+
+  let opts = args.options.unwrap_or_default();
+  let scale = args.scale.unwrap_or(1.0);
+  let target_width = args.target_width.unwrap_or(1200).clamp(64, 4096);
+
+  let outcome = execute_export(
+    ExportRequest {
+      screenshot: &screenshot,
+      wallpaper: wallpaper.as_ref(),
+      options: &opts,
+      raster: RasterizeOptions {
+        target_width,
+        scale,
+        ..Default::default()
+      },
+      encode: EncodeOptions {
+        format: ExportFormat::Png,
+        quality: 1.0,
+        ..Default::default()
+      },
+      destination: ExportDestination::Memory,
+    },
+    None,
+  )
+  .map_err(|e| e.to_string())?;
+
+  let data_url = outcome.to_data_url();
+  clipboard_write_image_data_url(app, clipboard_state, ClipboardWriteImageArgs { data_url }).await
 }
