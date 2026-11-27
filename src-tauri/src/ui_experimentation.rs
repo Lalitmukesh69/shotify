@@ -262,7 +262,7 @@ fn js_injection_payload() -> String {
           e.preventDefault();
           const dataUrl = await captureRegionDataUrl();
           if (!dataUrl) return;
-          const res = await invoke('exports_save_to_downloads', { args: { dataUrl, fileName: 'shot.style.png' } });
+          const res = await invoke('exports_save_to_downloads', { args: { dataUrl, fileName: 'shotify.png' } });
           log('Saved screenshot to downloads:', res);
         } catch (err) {
           log('Save failed:', err);
@@ -284,7 +284,7 @@ fn js_injection_payload() -> String {
           let filePath = null;
           if (typeof dialogSave === 'function') {
             try {
-              filePath = await dialogSave({ defaultPath: 'shot.style.png' });
+              filePath = await dialogSave({ defaultPath: 'shotify.png' });
             } catch {}
           }
 
@@ -292,7 +292,7 @@ fn js_injection_payload() -> String {
             const res = await invoke('exports_save_to_path', { args: { dataUrl, filePath } });
             log('Saved screenshot to path:', res);
           } else {
-            const res = await invoke('exports_save_to_downloads', { args: { dataUrl, fileName: 'shot.style.png' } });
+            const res = await invoke('exports_save_to_downloads', { args: { dataUrl, fileName: 'shotify.png' } });
             log('Save-to-folder fell back to downloads:', res);
           }
         } catch (err) {

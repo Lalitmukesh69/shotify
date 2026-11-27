@@ -220,4 +220,4 @@ Open `http://localhost:4173` in your browser.
 
 shotify is released under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](./LICENSE) for the full text.
 
-Portions derived from upstream [shot.style](https://github.com/webadderall/shot) are Copyright (c) 2026 shot.style and retain their original notice in [NOTICE](./NOTICE).
+Portions derived from upstream [shotify](https://github.com/webadderall/shot) are Copyright (c) 2026 shotify and retain their original notice in [NOTICE](./NOTICE).

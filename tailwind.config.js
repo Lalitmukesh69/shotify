@@ -10,7 +10,7 @@ module.exports = {
     extend: {
       colors: {
         gray: colors.zinc,
-        // Shot.style color palette
+        // Shotify color palette
         based: {
           // soften dark palette
           dark: '#0f1215',

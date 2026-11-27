@@ -2,7 +2,7 @@
 name = "shotify"
 version = "1.0.0"
 description = "shotify (Tauri)"
-authors = ["Lalit mukesh", "webadderall (shot.style)"]
+authors = ["Lalit mukesh", "webadderall (shotify)"]
 license = "GPL-3.0"
 edition = "2021"
 rust-version = "1.87"

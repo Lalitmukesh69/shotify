@@ -521,7 +521,7 @@ export const saveImageAdvanced = async (wrapperRef, blob, opts = {}, editorOptio
 		scale = 1,
 		format = 'png',
 		quality = 0.95,
-		fileName = `shot.style-${new Date().toISOString()}`,
+		fileName = `shotify-${new Date().toISOString()}`,
 		targetWidth,
 		targetHeight,
 	} = opts;

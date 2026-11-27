@@ -67,7 +67,7 @@ export const baseOptions = {
   fx: { noise: false, blur: 0, brightness: 1, vignette: 0 },
   browserBar: 'hidden',
   balance: { enabled: true },
-  watermark: { enabled: true, text: 'Made with shot.style', showTwitter: false, showVerified: false, position: 'inside' },
+  watermark: { enabled: true, text: 'Made with shotify', showTwitter: false, showVerified: false, position: 'inside' },
   pen: {
     color: '#FFFFFF',
   },
@@ -128,7 +128,7 @@ export const normalizeBalanceSetting = (balance, balanceDefaultEnabled) => {
 };
 
 export const createSafeOptions = (parsedOptions, balanceDefaultEnabled) => {
-  const defaultWatermark = { enabled: true, text: 'Made with shot.style', showTwitter: false, showVerified: false, position: 'inside' };
+  const defaultWatermark = { enabled: true, text: 'Made with shotify', showTwitter: false, showVerified: false, position: 'inside' };
   const safeOptions = {
     ...baseOptions,
     ...parsedOptions,

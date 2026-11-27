@@ -131,7 +131,7 @@ export function usePresets({
       if (isProbablyHexColor(nextColor)) setAnnotationColor(nextColor)
     }
     setWatermarkEnabled(!!snap.watermarkEnabled)
-    setWatermarkText(String(snap.watermarkText || 'Made with shot.style'))
+    setWatermarkText(String(snap.watermarkText || 'Made with shotify'))
     setWatermarkPosition(String(snap.watermarkPosition || 'inside'))
     setWatermarkPrefix(String(snap.watermarkPrefix || (snap.watermarkShowTwitter ? 'twitter' : 'none')))
     setWatermarkOffsetX(Number(snap.watermarkOffsetX ?? 0) || 0)
@@ -179,7 +179,7 @@ export function usePresets({
       customShadow: sanitizeCustomShadowState(null),
       annotationColor: '#7c3aed',
       watermarkEnabled: false,
-      watermarkText: 'Made with shot.style',
+      watermarkText: 'Made with shotify',
       watermarkPosition: 'inside',
       watermarkPrefix: 'none',
       watermarkOffsetX: 0,

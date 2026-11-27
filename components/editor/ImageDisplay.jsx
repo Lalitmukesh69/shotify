@@ -1213,7 +1213,7 @@ const ImageDisplay = ({ options, blob, wrapperRef, exportRef, activeTool, onRequ
             <span style={{ opacity: 0.92 }}>
               {(typeof options?.watermark?.text === 'string' && options.watermark.text.length)
                 ? options.watermark.text
-                : 'Made with shot.style'}
+                : 'Made with shotify'}
             </span>
             {options?.watermark?.showVerified && (
               <span

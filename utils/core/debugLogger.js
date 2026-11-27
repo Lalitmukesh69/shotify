@@ -1,5 +1,5 @@
 /**
- * Debug logging for shot.style.
+ * Debug logging for shotify.
  * Enable at runtime via localStorage:
  *   localStorage.setItem('debug.enabled', '1')
  *   localStorage.setItem('debug.balance', '1')   // optional: balance logs

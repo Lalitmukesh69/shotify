@@ -603,7 +603,7 @@ export default function LeftSidebar() {
         value={watermarkText}
         onChange={(e) => setWatermarkText(e.target.value)}
         className="w-full mt-3 bg-[#2C2C2C] rounded-[4.5px] text-xs font-inter font-light text-white px-2 py-1"
-        placeholder="Made with shot.style"
+        placeholder="Made with shotify"
       />
       <div className="mt-3 grid grid-cols-2 gap-2 py-2">
         <div className="flex items-center">

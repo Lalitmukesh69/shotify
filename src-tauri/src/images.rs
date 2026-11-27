@@ -1508,7 +1508,7 @@ pub async fn exports_save_to_folder(_app: tauri::AppHandle, args: SaveExportToFo
   let stem = requested_path
     .file_stem()
     .and_then(|s| s.to_str())
-    .unwrap_or("shot.style")
+    .unwrap_or("shotify")
     .to_string();
 
   let ext = requested_path
