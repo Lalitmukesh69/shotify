@@ -853,8 +853,15 @@
                 <h1>Screenshots, gently composed.</h1>
                 <p style="max-width:30em">Capture, frame, annotate and export in one calm place. No more passing a
                     single image through three different apps.</p>
-                <div class="actions"><a class="btn primary" href="#download">Download for macOS</a><a class="btn"
-                        href="#download">Download for Windows</a><a class="btn" href="#download">Download for Linux</a>
+                <div class="actions"><a class="btn primary" data-download-platform="macos"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        title="Download shotify for macOS (.dmg)">Download for macOS</a><a class="btn"
+                        data-download-platform="windows"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        title="Download shotify for Windows (.exe)">Download for Windows</a><a class="btn"
+                        data-download-platform="linux"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        title="Download shotify for Linux (.AppImage)">Download for Linux</a>
                 </div>
             </div>
             <div class="blob reveal"><img class="shot"
@@ -1035,8 +1042,15 @@
             <div class="wrap reveal">
                 <h2>Make your next screenshot feel considered.</h2>
                 <p>Download shotify and take the first one in under a minute.</p>
-                <div class="actions"><a class="btn primary" href="#download">Download for macOS</a><a class="btn"
-                        href="#download">Download for Windows</a><a class="btn" href="#download">Download for Linux</a>
+                <div class="actions"><a class="btn primary" data-download-platform="macos"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        title="Download shotify for macOS (.dmg)">Download for macOS</a><a class="btn"
+                        data-download-platform="windows"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        title="Download shotify for Windows (.exe)">Download for Windows</a><a class="btn"
+                        data-download-platform="linux"
+                        href="https://github.com/Lalitmukesh69/shotify/releases/latest"
+                        title="Download shotify for Linux (.AppImage)">Download for Linux</a>
                 </div>
                 <a href="#story" style="font-size:15px">Read the source on GitHub</a>
             </div>
@@ -1084,6 +1098,109 @@
                 Object.keys(map).forEach(function (k) { var i = d.getElementById(k); i.value = i.defaultValue; i.dispatchEvent(new Event('input')) });
             });
             setBg(sws[0]);
+
+            // direct release asset downloads
+            var GITHUB_REPO = 'Lalitmukesh69/shotify';
+            var API_URL = 'https://api.github.com/repos/' + GITHUB_REPO + '/releases/latest';
+            var FALLBACK_API_URL = 'https://api.github.com/repos/' + GITHUB_REPO + '/releases';
+            var RELEASES_PAGE = 'https://github.com/' + GITHUB_REPO + '/releases/latest';
+
+            var matchers = {
+                windows: [
+                    /windows.*\.exe$/i,
+                    /-setup\.exe$/i,
+                    /\.exe$/i,
+                    /\.msi$/i
+                ],
+                macos: [
+                    /darwin.*\.dmg$/i,
+                    /mac.*\.dmg$/i,
+                    /\.dmg$/i,
+                    /darwin.*\.zip$/i,
+                    /mac.*\.zip$/i,
+                    /\.zip$/i,
+                    /app\.tar\.gz$/i
+                ],
+                linux: [
+                    /linux.*\.appimage$/i,
+                    /\.appimage$/i,
+                    /linux.*\.deb$/i,
+                    /\.deb$/i,
+                    /linux.*\.rpm$/i,
+                    /\.rpm$/i,
+                    /linux.*\.tar\.gz$/i
+                ]
+            };
+
+            var resolvedUrls = {};
+            var fetchPromise = null;
+
+            function resolveAssets() {
+                if (!fetchPromise) {
+                    fetchPromise = fetch(API_URL)
+                        .then(function (res) {
+                            if (res.ok) return res.json();
+                            return fetch(FALLBACK_API_URL).then(function (r) {
+                                return r.ok ? r.json().then(function (list) { return list && list[0]; }) : null;
+                            });
+                        })
+                        .then(function (release) {
+                            if (!release || !Array.isArray(release.assets)) return null;
+                            var assets = release.assets.filter(function (a) {
+                                return a && a.browser_download_url && !/\.(sig|json|txt|sha256)$/i.test(a.name);
+                            });
+
+                            ['windows', 'macos', 'linux'].forEach(function (platform) {
+                                var rules = matchers[platform];
+                                for (var i = 0; i < rules.length; i++) {
+                                    var found = assets.find(function (a) { return rules[i].test(a.name); });
+                                    if (found) {
+                                        resolvedUrls[platform] = found.browser_download_url;
+                                        break;
+                                    }
+                                }
+                            });
+                            return release;
+                        })
+                        .catch(function () { return null; });
+                }
+                return fetchPromise;
+            }
+
+            function updateButtons() {
+                var btns = d.querySelectorAll('[data-download-platform]');
+                btns.forEach(function (btn) {
+                    var p = btn.getAttribute('data-download-platform');
+                    if (resolvedUrls[p]) {
+                        btn.href = resolvedUrls[p];
+                        btn.setAttribute('download', '');
+                    }
+                });
+            }
+
+            var dlBtns = d.querySelectorAll('[data-download-platform]');
+            dlBtns.forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    var p = btn.getAttribute('data-download-platform');
+                    if (!p) return;
+                    if (resolvedUrls[p]) {
+                        btn.href = resolvedUrls[p];
+                        return;
+                    }
+                    e.preventDefault();
+                    var origText = btn.textContent;
+                    btn.textContent = 'Locating download...';
+                    resolveAssets().then(function (release) {
+                        btn.textContent = origText;
+                        var target = resolvedUrls[p] || (release && release.html_url) || RELEASES_PAGE;
+                        window.location.href = target;
+                    });
+                });
+            });
+
+            resolveAssets().then(function () {
+                updateButtons();
+            });
         })();
     </script>
 </body>
