@@ -1,0 +1,28 @@
+<svg width="304" height="304" viewBox="34 34 252 252" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_d_rust_red)">
+<rect x="52" y="52" width="199.894" height="199.894" rx="19.5019" fill="#F84545"/>
+</g>
+<path d="M170.637 91.0037L227.517 91.0037" stroke="#A61C1C" stroke-width="9.75094" stroke-linecap="round"/>
+<path d="M170.637 115.381L227.517 115.381" stroke="#A61C1C" stroke-width="9.75094" stroke-linecap="round"/>
+<path d="M170.637 139.758L227.517 139.758" stroke="#A61C1C" stroke-width="9.75094" stroke-linecap="round"/>
+<path d="M170.637 164.136L227.517 164.136" stroke="#A61C1C" stroke-width="9.75094" stroke-linecap="round"/>
+<path d="M75.5645 189.326L227.517 189.326" stroke="#A61C1C" stroke-width="9.75094" stroke-linecap="round"/>
+<path d="M75.5645 213.703L227.517 213.703" stroke="#A61C1C" stroke-width="9.75094" stroke-linecap="round"/>
+<rect x="71.502" y="85.3157" width="84.5081" height="85.3207" fill="#D13232"/>
+<rect x="246.627" y="216" width="4.06289" height="59.3182" rx="2.03145" fill="#2D0707"/>
+<rect x="219" y="247.691" width="4.06289" height="59.3182" rx="2.03145" transform="rotate(-90 219 247.691)" fill="#2D0707"/>
+<circle cx="248.659" cy="245.659" r="16.6579" fill="#3B0D0D" fill-opacity="0.5" stroke="#2D0707" stroke-width="1.62516"/>
+<defs>
+<filter id="filter0_d_rust_red" x="41.8428" y="45.0931" width="220.209" height="220.209" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feMorphology radius="3.25031" operator="dilate" in="SourceAlpha" result="effect1_dropShadow_rust_red"/>
+<feOffset dy="3.25031"/>
+<feGaussianBlur stdDeviation="3.45346"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.25 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_rust_red"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_rust_red" result="shape"/>
+</filter>
+</defs>
+</svg>
